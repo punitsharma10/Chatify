@@ -32,11 +32,11 @@ const registerUser = async (req,res) => {
             success : true
         })
     } catch (error) {
-        return response.status(500).json({
+        return res.status(500).json({
             message : error.message || error,
             error : true
         })
     }
 }
 
-module.exports = registerUser
+module.exports = registerUser;
