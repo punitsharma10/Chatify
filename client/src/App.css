@@ -1,0 +1,18 @@
+.scrollbar::-webkit-scrollbar{
+  width: 12px;
+}
+.scrollbar::-webkit-scrollbar-track{
+  @apply bg-slate-100 
+}
+.scrollbar::-webkit-scrollbar-thumb{
+  @apply bg-slate-300 rounded-full
+}
+
+/* Hide scrollbar for Chrome, Safari */
+/* .scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+} */
