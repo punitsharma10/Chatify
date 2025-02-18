@@ -11,13 +11,18 @@ const app = express()
 /***socket connection */
 const server = http.createServer(app)
   
+const corsOptions = {
+    origin: "https://chatify-frontend-vj8e.onrender.com", 
+    credentials: true
+  };
+  
+  app.use(cors(corsOptions));
+  
   const io = new Server(server, {
-      cors: {
-        origin: "https://chatify-frontend-vj8e.onrender.com",  
-          credentials: true,  
-          methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-          allowedHeaders: ["Content-Type", "Authorization"]
-      }
+    cors: {
+      origin: "https://chatify-frontend-vj8e.onrender.com",
+      credentials: true
+    }
   });
   
 
