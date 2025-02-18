@@ -10,16 +10,11 @@ const app = express()
 
 /***socket connection */
 const server = http.createServer(app)
-
-const allowedOrigins = [
-    "https://chatify-frontend-vj8e.onrender.com",  // Your frontend URL
-    "http://localhost:3000"  // Allow localhost for development
-  ];
   
   const io = new Server(server, {
       cors: {
-          origin: allowedOrigins,  // ✅ Only allow specific origins
-          credentials: true,  // ✅ Needed for auth cookies or headers
+        origin: "https://chatify-frontend-vj8e.onrender.com",  
+          credentials: true,  
           methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
           allowedHeaders: ["Content-Type", "Authorization"]
       }
