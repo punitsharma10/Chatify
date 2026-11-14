@@ -7,7 +7,7 @@ import Avatar from './Avatar'
 import Loading from './Loading'
 import { socketCall } from '../helpers/socketCall'
 import { formatListTime } from '../helpers/formatTime'
-import { renderFormatted } from '../helpers/formatText'
+import { renderFormatted, messagePreview } from '../helpers/formatText'
 import { thumbUrl, videoPoster } from '../helpers/media'
 import { usePeopleNames } from '../helpers/contacts'
 
@@ -52,7 +52,7 @@ const StarredMessages = ({ onClose }) => {
               {message.imageUrl && <img src={thumbUrl(message.imageUrl, 120)} alt='' className='h-14 w-14 rounded object-cover' />}
               {message.videoUrl && <img src={videoPoster(message.videoUrl)} alt='' className='h-14 w-14 rounded bg-black object-cover' />}
               <p className='line-clamp-3 flex-1 text-sm text-wa-text'>
-                {message.text ? renderFormatted(message.text) : message.fileName ? `📄 ${message.fileName}` : message.imageUrl ? 'Photo' : 'Video'}
+                {message.text ? renderFormatted(message.text) : messagePreview(message)}
               </p>
               <IoStar size={13} className='mt-1 shrink-0 text-[#8696a0]' />
             </div>

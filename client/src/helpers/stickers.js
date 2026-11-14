@@ -1,0 +1,34 @@
+// Built-in sticker packs: Google Noto animated emoji (CC BY 4.0, https://googlefonts.github.io/noto-emoji-animation/).
+// Each sticker is an animated WebP; the picker shows the light still SVG until you hover / send.
+const BASE = 'https://fonts.gstatic.com/s/e/notoemoji/latest'
+
+export const stickerUrl = (code) => `${BASE}/${code}/512.webp`
+export const stickerThumb = (code) => `${BASE}/${code}/emoji.svg`
+
+// your own picture -> 512×512 sticker (whole picture kept, transparent padding), WebP where the browser supports it
+export const makeStickerImage = (file) => new Promise((resolve, reject) => {
+  const img = new Image()
+  const url = URL.createObjectURL(file)
+  img.onload = () => {
+    const size = 512
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = size
+    const ctx = canvas.getContext('2d')
+    const scale = Math.min(size / img.width, size / img.height)
+    const w = img.width * scale
+    const h = img.height * scale
+    ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h)
+    URL.revokeObjectURL(url)
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('encode failed'))), 'image/webp', 0.9)
+  }
+  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not an image')) }
+  img.src = url
+})
+
+export const STICKER_PACKS = [
+  { id : 'smileys', name : 'Smileys', icon : '😀', stickers : [{emoji : "😀",code : "1f600"},{emoji : "😃",code : "1f603"},{emoji : "😄",code : "1f604"},{emoji : "😁",code : "1f601"},{emoji : "😆",code : "1f606"},{emoji : "😅",code : "1f605"},{emoji : "😂",code : "1f602"},{emoji : "🤣",code : "1f923"},{emoji : "😊",code : "1f60a"},{emoji : "😇",code : "1f607"},{emoji : "🙂",code : "1f642"},{emoji : "🙃",code : "1f643"},{emoji : "😉",code : "1f609"},{emoji : "😌",code : "1f60c"},{emoji : "😍",code : "1f60d"},{emoji : "🥰",code : "1f970"},{emoji : "😘",code : "1f618"},{emoji : "😋",code : "1f60b"},{emoji : "😛",code : "1f61b"},{emoji : "😜",code : "1f61c"},{emoji : "🤪",code : "1f92a"},{emoji : "🤨",code : "1f928"},{emoji : "🧐",code : "1f9d0"},{emoji : "🤓",code : "1f913"},{emoji : "😎",code : "1f60e"},{emoji : "🥳",code : "1f973"},{emoji : "😏",code : "1f60f"},{emoji : "😒",code : "1f612"},{emoji : "😔",code : "1f614"},{emoji : "😟",code : "1f61f"},{emoji : "🥺",code : "1f97a"},{emoji : "😢",code : "1f622"},{emoji : "😭",code : "1f62d"},{emoji : "😤",code : "1f624"},{emoji : "😠",code : "1f620"},{emoji : "😡",code : "1f621"},{emoji : "🤬",code : "1f92c"},{emoji : "🤯",code : "1f92f"},{emoji : "😳",code : "1f633"},{emoji : "🥵",code : "1f975"},{emoji : "🥶",code : "1f976"},{emoji : "😱",code : "1f631"},{emoji : "😨",code : "1f628"},{emoji : "😰",code : "1f630"},{emoji : "😓",code : "1f613"},{emoji : "🤗",code : "1f917"},{emoji : "🤔",code : "1f914"},{emoji : "🤭",code : "1f92d"},{emoji : "🤫",code : "1f92b"},{emoji : "😶",code : "1f636"},{emoji : "😐",code : "1f610"},{emoji : "😑",code : "1f611"},{emoji : "😬",code : "1f62c"},{emoji : "🙄",code : "1f644"},{emoji : "😮",code : "1f62e"},{emoji : "😲",code : "1f632"},{emoji : "🥱",code : "1f971"},{emoji : "😴",code : "1f634"},{emoji : "🤤",code : "1f924"},{emoji : "😵",code : "1f635"},{emoji : "🤐",code : "1f910"},{emoji : "🥴",code : "1f974"},{emoji : "🤢",code : "1f922"},{emoji : "🤮",code : "1f92e"},{emoji : "🤧",code : "1f927"},{emoji : "😷",code : "1f637"},{emoji : "🤒",code : "1f912"},{emoji : "🤕",code : "1f915"},{emoji : "🤑",code : "1f911"},{emoji : "🤠",code : "1f920"},{emoji : "😈",code : "1f608"},{emoji : "👻",code : "1f47b"},{emoji : "💀",code : "1f480"},{emoji : "👽",code : "1f47d"},{emoji : "🤖",code : "1f916"},{emoji : "💩",code : "1f4a9"},{emoji : "🫠",code : "1fae0"},{emoji : "🫡",code : "1fae1"},{emoji : "🫣",code : "1fae3"},{emoji : "🥹",code : "1f979"}] },
+  { id : 'love', name : 'Love', icon : '❤️', stickers : [{emoji : "❤️",code : "2764_fe0f"},{emoji : "🧡",code : "1f9e1"},{emoji : "💛",code : "1f49b"},{emoji : "💚",code : "1f49a"},{emoji : "💙",code : "1f499"},{emoji : "💜",code : "1f49c"},{emoji : "🖤",code : "1f5a4"},{emoji : "🤍",code : "1f90d"},{emoji : "💔",code : "1f494"},{emoji : "❤️‍🔥",code : "2764_fe0f_200d_1f525"},{emoji : "💕",code : "1f495"},{emoji : "💞",code : "1f49e"},{emoji : "💓",code : "1f493"},{emoji : "💗",code : "1f497"},{emoji : "💖",code : "1f496"},{emoji : "💘",code : "1f498"},{emoji : "💝",code : "1f49d"},{emoji : "😻",code : "1f63b"},{emoji : "😽",code : "1f63d"},{emoji : "💋",code : "1f48b"},{emoji : "🌹",code : "1f339"},{emoji : "💐",code : "1f490"},{emoji : "🫶",code : "1faf6"}] },
+  { id : 'hands', name : 'Hands', icon : '👍', stickers : [{emoji : "👍",code : "1f44d"},{emoji : "👎",code : "1f44e"},{emoji : "👏",code : "1f44f"},{emoji : "🙌",code : "1f64c"},{emoji : "🙏",code : "1f64f"},{emoji : "🤝",code : "1f91d"},{emoji : "👋",code : "1f44b"},{emoji : "✌️",code : "270c_fe0f"},{emoji : "🤞",code : "1f91e"},{emoji : "🤟",code : "1f91f"},{emoji : "🤘",code : "1f918"},{emoji : "👌",code : "1f44c"},{emoji : "🤌",code : "1f90c"},{emoji : "💪",code : "1f4aa"},{emoji : "👊",code : "1f44a"},{emoji : "✊",code : "270a"},{emoji : "🫰",code : "1faf0"},{emoji : "🫵",code : "1faf5"},{emoji : "☝️",code : "261d_fe0f"},{emoji : "👀",code : "1f440"}] },
+  { id : 'animals', name : 'Animals', icon : '🐱', stickers : [{emoji : "🐱",code : "1f431"},{emoji : "🦊",code : "1f98a"},{emoji : "🐻",code : "1f43b"},{emoji : "🐼",code : "1f43c"},{emoji : "🦁",code : "1f981"},{emoji : "🐮",code : "1f42e"},{emoji : "🐸",code : "1f438"},{emoji : "🙈",code : "1f648"},{emoji : "🙉",code : "1f649"},{emoji : "🙊",code : "1f64a"},{emoji : "🐧",code : "1f427"},{emoji : "🐦",code : "1f426"},{emoji : "🦉",code : "1f989"},{emoji : "🦄",code : "1f984"},{emoji : "🐝",code : "1f41d"},{emoji : "🦋",code : "1f98b"},{emoji : "🐌",code : "1f40c"},{emoji : "🐞",code : "1f41e"},{emoji : "🐢",code : "1f422"},{emoji : "🐍",code : "1f40d"},{emoji : "🦖",code : "1f996"},{emoji : "🐙",code : "1f419"},{emoji : "🦀",code : "1f980"},{emoji : "🐬",code : "1f42c"},{emoji : "🐳",code : "1f433"},{emoji : "🦈",code : "1f988"}] },
+  { id : 'fun', name : 'Party & food', icon : '🎉', stickers : [{emoji : "🔥",code : "1f525"},{emoji : "✨",code : "2728"},{emoji : "🎉",code : "1f389"},{emoji : "🎊",code : "1f38a"},{emoji : "🎈",code : "1f388"},{emoji : "🎂",code : "1f382"},{emoji : "🎁",code : "1f381"},{emoji : "🏆",code : "1f3c6"},{emoji : "💯",code : "1f4af"},{emoji : "✅",code : "2705"},{emoji : "❌",code : "274c"},{emoji : "⚡",code : "26a1"},{emoji : "🌈",code : "1f308"},{emoji : "⭐",code : "2b50"},{emoji : "🌟",code : "1f31f"},{emoji : "💫",code : "1f4ab"},{emoji : "🍕",code : "1f355"},{emoji : "🍔",code : "1f354"},{emoji : "🌮",code : "1f32e"},{emoji : "🍩",code : "1f369"},{emoji : "🍪",code : "1f36a"},{emoji : "🍿",code : "1f37f"},{emoji : "☕",code : "2615"},{emoji : "🍻",code : "1f37b"},{emoji : "🥂",code : "1f942"},{emoji : "🍾",code : "1f37e"},{emoji : "⚽",code : "26bd"},{emoji : "🏏",code : "1f3cf"},{emoji : "🚀",code : "1f680"},{emoji : "💸",code : "1f4b8"},{emoji : "💥",code : "1f4a5"},{emoji : "🌸",code : "1f338"},{emoji : "🍀",code : "1f340"}] },
+]

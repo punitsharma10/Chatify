@@ -45,4 +45,19 @@ export const renderFormatted = (text = '', term = '') =>
   })
 
 // plain-text preview for chat list / reply quotes (strip formatting markers)
+// short description of any message (chat list, notifications, pinned bar, …)
+export const messagePreview = (m) => {
+  if (!m) return ''
+  if (m.text) return plainPreview(m.text)
+  if (m.imageUrl) return '📷 Photo'
+  if (m.videoUrl) return '🎥 Video'
+  if (m.stickerUrl) return '🩷 Sticker'
+  if (m.audioUrl) {
+    const s = Math.round(m.audioDuration || 0)
+    return `🎤 Voice message${s ? ` (${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')})` : ''}`
+  }
+  if (m.fileName) return `📄 ${m.fileName}`
+  return 'Message'
+}
+
 export const plainPreview = (text = '') => text.replace(/```/g, '').replace(/(^|\s)[*_~]([^*_~\n]+)[*_~](?=\s|$)/g, '$1$2')

@@ -11,7 +11,7 @@ import SettingsDrawer from './SettingsDrawer';
 import NewGroup from './NewGroup';
 import { systemText } from '../helpers/groupText';
 import { usePeopleNames } from '../helpers/contacts';
-import { IoMailUnreadOutline, IoCall } from "react-icons/io5";
+import { IoMailUnreadOutline, IoCall, IoMic, IoHappyOutline } from "react-icons/io5";
 import { MdOutlineGroupAdd, MdOutlinePersonAddAlt } from "react-icons/md";
 import { IoExitOutline } from "react-icons/io5";
 import PopoverMenu from './PopoverMenu';
@@ -30,6 +30,8 @@ import { IoSearchOutline, IoClose, IoCamera, IoVideocam, IoChevronDown, IoNotifi
 import { BsPinAngle, BsPinAngleFill } from "react-icons/bs";
 import { BiLogOut } from "react-icons/bi";
 import { FaRegUser } from "react-icons/fa";
+
+const voiceLength = (sec = 0) => { const s = Math.round(sec); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
 
 const SideBar = () => {
   const user = useSelector(state => state?.user)
@@ -179,6 +181,8 @@ const SideBar = () => {
         {author}
         {last.imageUrl && <span className='flex shrink-0 items-center gap-1'><IoCamera size={16} />{!last.text && <span>Photo</span>}</span>}
         {last.videoUrl && <span className='flex shrink-0 items-center gap-1'><IoVideocam size={16} />{!last.text && <span>Video</span>}</span>}
+        {last.stickerUrl && <span className='flex shrink-0 items-center gap-1'><IoHappyOutline size={16} /> Sticker</span>}
+        {last.audioUrl && <span className='flex shrink-0 items-center gap-1'><IoMic size={15} className={sentByMe ? '' : 'text-wa-green'} /> {voiceLength(last.audioDuration)}</span>}
         {last.fileUrl && <span className='flex min-w-0 items-center gap-1'><IoDocumentOutline size={15} className='shrink-0' />{!last.text && <span className='truncate'>{last.fileName}</span>}</span>}
         {last.text && <span className='truncate'>{plainPreview(last.text)}</span>}
       </>

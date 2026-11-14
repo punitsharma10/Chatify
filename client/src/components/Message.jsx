@@ -21,7 +21,10 @@ import uploadFile, { MAX_UPLOAD_BYTES } from '../helpers/uploadFile'
 import { socketCall, newClientId } from '../helpers/socketCall'
 import { formatDayLabel, formatLastSeen, formatFullDate } from '../helpers/formatTime'
 import { kindOfFile, formatBytes, fileExtension, downloadMedia } from '../helpers/media'
-import { plainPreview } from '../helpers/formatText'
+import { plainPreview, messagePreview } from '../helpers/formatText'
+import { VoiceRecorder, voiceSupported } from './Voice'
+import { makeStickerImage } from '../helpers/stickers'
+import { IoMic } from 'react-icons/io5'
 import { useWallpaper } from '../helpers/preferences'
 import { setBlocked } from '../redux/userSlice'
 import { HiDotsVertical } from "react-icons/hi";
@@ -101,6 +104,7 @@ const Message = () => {
   const [atBottom, setAtBottom] = useState(true)
   const [newCount, setNewCount] = useState(0)
   const [dragOver, setDragOver] = useState(false)
+  const [recording, setRecording] = useState(false)
 
   const scrollRef = useRef(null)
   const contentRef = useRef(null)
@@ -238,6 +242,7 @@ const Message = () => {
     setUnreadMarker(null)
     setNewCount(0)
     setComposer(null)
+    setRecording(false)
     setText('')
     setPanel(null)
     atBottomRef.current = true
@@ -502,10 +507,63 @@ const Message = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, peerId, deliver])
 
+  /* ---------- stickers ---------- */
+  const sendSticker = (url) => {
+    setEmojiOpen(false)
+    const clientId = newClientId()
+    const payload = { receiver : peerId, clientId, stickerUrl : url, replyTo : replyTo?._id }
+    setMessages((prev) => [...prev, {
+      _id : clientId, clientId, status : 'sending', msgByUserId : me, text : '', stickerUrl : url,
+      createdAt : new Date().toISOString(), replyTo : replyPreview(replyTo), reactions : [], payload
+    }])
+    pendingScroll.current = 'bottom'
+    atBottomRef.current = true
+    setReplyTo(null)
+    deliver(clientId, payload)
+  }
+
+  // "Create" in the sticker panel: your picture becomes a sticker (saved under My stickers)
+  const createSticker = async (file) => {
+    if (!file.type.startsWith('image/')) { notifyError('Choose a picture to make a sticker'); return null }
+    try {
+      const blob = await makeStickerImage(file)
+      const ext = blob.type === 'image/webp' ? 'webp' : 'png'
+      const up = await uploadFile(new File([blob], `sticker-${Date.now()}.${ext}`, { type : blob.type }))
+      return up?.url || null
+    } catch {
+      notifyError("Couldn't make a sticker from that picture. Try another one.")
+      return null
+    }
+  }
+
+  /* ---------- voice messages ---------- */
+  const sendVoice = useCallback(async (rec, reply, existingId) => {
+    const clientId = existingId || newClientId()
+    setMessages((prev) => upsert(prev, {
+      _id : clientId, clientId, status : 'uploading', progress : 0, msgByUserId : me, text : '', kind : 'voice',
+      audioLocal : URL.createObjectURL(rec.blob), audioDuration : rec.duration, audioWaveform : rec.waveform, voice : rec,
+      createdAt : new Date().toISOString(), replyTo : reply ? replyPreview(reply) : null, reactions : []
+    }))
+    pendingScroll.current = 'bottom'
+    atBottomRef.current = true
+    try {
+      const ext = rec.type.includes('mp4') ? 'm4a' : rec.type.includes('ogg') ? 'ogg' : 'webm'
+      const file = new File([rec.blob], `voice-${Date.now()}.${ext}`, { type : rec.type.split(';')[0] })
+      const up = await uploadFile(file, { onProgress : (p) => patchLocal(clientId, { progress : p }) })
+      if (!up?.url) throw new Error('upload failed')
+      deliver(clientId, { receiver : peerId, clientId, audioUrl : up.url, audioDuration : rec.duration, audioWaveform : rec.waveform, replyTo : reply?._id })
+    } catch {
+      patchLocal(clientId, { status : 'failed', payload : null })
+      notifyError("Couldn't send the voice message. Tap it to retry.")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, peerId, deliver])
+
   const retry = useCallback((msg) => {
     if (msg.payload) return deliver(msg.clientId, msg.payload)
+    if (msg.voice) return sendVoice(msg.voice, msg.replyTo, msg.clientId)
     if (msg.file) return startUpload({ id : msg.clientId, file : msg.file, kind : msg.kind, url : msg.localPreview, caption : msg.text }, msg.replyTo)
-  }, [deliver, startUpload])
+  }, [deliver, startUpload, sendVoice])
   const retryRef = useRef(retry)
   retryRef.current = retry
 
@@ -654,8 +712,8 @@ const Message = () => {
     const mine = String(msg.msgByUserId) === String(me)
     const local = !!msg.status
     const deleted = msg.deletedForEveryone
-    const canEdit = mine && !local && !deleted && !msg.forwarded && Date.now() - new Date(msg.createdAt).getTime() < EDIT_WINDOW_MS
-    const mediaUrl = msg.imageUrl || msg.videoUrl || msg.fileUrl
+    const canEdit = mine && !local && !deleted && !msg.forwarded && !msg.stickerUrl && !msg.audioUrl && Date.now() - new Date(msg.createdAt).getTime() < EDIT_WINDOW_MS
+    const mediaUrl = msg.imageUrl || msg.videoUrl || msg.fileUrl || msg.audioUrl
     return [
       { label : 'Reply', icon : <BsReply size={18} />, hidden : local || deleted || !canSend, onClick : () => { setEditing(null); setReplyTo(msg); inputRef.current?.focus() } },
       { label : 'Copy', icon : <IoCopyOutline size={17} />, hidden : !msg.text || deleted, onClick : () => copyMessages([String(msg._id)]) },
@@ -874,7 +932,7 @@ const Message = () => {
             </span>
             <BsPinAngleFill size={14} className='shrink-0 text-[#8696a0]' />
             <span className='min-w-0 flex-1 truncate text-sm text-wa-text'>
-              {pinnedNow.text ? plainPreview(pinnedNow.text) : pinnedNow.imageUrl ? '📷 Photo' : pinnedNow.videoUrl ? '🎥 Video' : pinnedNow.fileName ? `📄 ${pinnedNow.fileName}` : 'Message'}
+              {messagePreview(pinnedNow)}
             </span>
           </button>
         )}
@@ -1000,6 +1058,13 @@ const Message = () => {
           </footer>
         ) : (
           <footer className='relative flex min-h-[62px] shrink-0 items-end gap-1 bg-wa-panel px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:gap-2 sm:px-4'>
+            {recording ? (
+              <VoiceRecorder
+                onSend={(rec) => { setRecording(false); sendVoice(rec, replyTo); setReplyTo(null) }}
+                onCancel={() => setRecording(false)}
+                onError={notifyError}
+              />
+            ) : (<>
             <div className='relative mb-[1px] flex items-center'>
               <button onClick={() => { setEmojiOpen((o) => !o); setAttachOpen(false) }} className={`wa-icon-btn ${emojiOpen ? 'text-wa-green' : ''}`} title='Emoji'>
                 <MdOutlineEmojiEmotions size={24} />
@@ -1008,6 +1073,8 @@ const Message = () => {
                 <EmojiPicker
                   className='absolute bottom-12 left-0'
                   onClose={() => setEmojiOpen(false)}
+                  onSticker={sendSticker}
+                  onCreateSticker={createSticker}
                   onSelect={(e) => {
                     const el = inputRef.current
                     const start = el?.selectionStart ?? text.length
@@ -1050,14 +1117,26 @@ const Message = () => {
               }}
             />
 
-            <button
-              onClick={sendText}
-              disabled={!text.trim() && !editing}
-              className={`mb-[1px] flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${text.trim() ? 'bg-wa-green text-white hover:bg-wa-greenDark' : 'bg-wa-green/60 text-white sm:bg-transparent sm:text-[#8696a0]'}`}
-              title={editing ? 'Save' : 'Send'}
-            >
-              {editing ? <IoCheckmark size={22} /> : <IoMdSend size={20} />}
-            </button>
+            {/* empty box: mic for a voice message (like WhatsApp); otherwise send */}
+            {!text.trim() && !editing && voiceSupported() ? (
+              <button
+                onClick={() => { setEmojiOpen(false); setAttachOpen(false); stopTyping(); setRecording(true) }}
+                className='mb-[1px] flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-wa-green text-white transition-colors hover:bg-wa-greenDark sm:bg-transparent sm:text-[#54656f] sm:hover:bg-black/5'
+                title='Record voice message'
+              >
+                <IoMic size={22} />
+              </button>
+            ) : (
+              <button
+                onClick={sendText}
+                disabled={!text.trim() && !editing}
+                className={`mb-[1px] flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${text.trim() ? 'bg-wa-green text-white hover:bg-wa-greenDark' : 'bg-wa-green/60 text-white sm:bg-transparent sm:text-[#8696a0]'}`}
+                title={editing ? 'Save' : 'Send'}
+              >
+                {editing ? <IoCheckmark size={22} /> : <IoMdSend size={20} />}
+              </button>
+            )}
+            </>)}
           </footer>
         )}
 
@@ -1179,7 +1258,7 @@ const Message = () => {
       {dialog?.type === 'info' && dialog.info.group && (
         <Dialog title='Message info' onClose={() => setDialog(null)} actions={[{ label : 'Close', onClick : () => setDialog(null) }]}>
           <div className='mb-4 rounded-lg bg-wa-chat p-3'>
-            <p className='line-clamp-3 text-sm text-wa-text'>{dialog.msg.text || (dialog.msg.imageUrl ? '📷 Photo' : dialog.msg.videoUrl ? '🎥 Video' : `📄 ${dialog.msg.fileName}`)}</p>
+            <p className='line-clamp-3 text-sm text-wa-text'>{messagePreview(dialog.msg)}</p>
           </div>
           <div className='max-h-[50dvh] overflow-y-auto scrollbar'>
             <ReceiptList icon={<BsCheck2All size={18} className='text-wa-tick' />} title='Read by' people={dialog.info.readBy} nameOf={names.name} />
@@ -1192,7 +1271,7 @@ const Message = () => {
       {dialog?.type === 'info' && !dialog.info.group && (
         <Dialog title='Message info' onClose={() => setDialog(null)} actions={[{ label : 'Close', onClick : () => setDialog(null) }]}>
           <div className='mb-4 rounded-lg bg-wa-chat p-3'>
-            <p className='line-clamp-3 text-sm text-wa-text'>{dialog.msg.text || (dialog.msg.imageUrl ? '📷 Photo' : dialog.msg.videoUrl ? '🎥 Video' : `📄 ${dialog.msg.fileName}`)}</p>
+            <p className='line-clamp-3 text-sm text-wa-text'>{messagePreview(dialog.msg)}</p>
           </div>
           <InfoRow icon={<BsCheck2All size={18} className='text-wa-tick' />} label='Read' value={dialog.info.receiptsHidden ? 'Hidden (read receipts are off)' : dialog.info.seenAt ? formatFullDate(dialog.info.seenAt) : '—'} />
           <InfoRow icon={<BsCheck2All size={18} className='text-[#8696a0]' />} label='Delivered' value={dialog.info.deliveredAt ? formatFullDate(dialog.info.deliveredAt) : '—'} />

@@ -5,7 +5,7 @@ const getConversation = require('../helpers/getConversation')
 const { getConversationItem } = require('../helpers/getConversation')
 const presence = require('./presence')
 const {
-    LIMITS, REPLY_FIELDS, isValidId, idOf, escapeRegex, isAllowedMediaUrl, hasBlocked, receiptsAllowed, contactOf,
+    LIMITS, REPLY_FIELDS, isValidId, idOf, escapeRegex, isAllowedMediaUrl, isAllowedStickerUrl, hasBlocked, receiptsAllowed, contactOf,
     publicUser, isParticipant, isActiveMember, peerOf, getState, setState, findConversation, getOrCreateConversation,
     visibleFilter, serializeMessage, loadMessages,
     isGroup, memberOf, memberIds, isAdmin, allowed, chatKeyOf, chatsOf, groupAsPeer, canSeeMessage
@@ -490,10 +490,25 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
             fileUrl : payload.fileUrl || "",
             fileName : typeof payload.fileName === 'string' ? payload.fileName.slice(0, 255) : "",
             fileSize : Number.isFinite(Number(payload.fileSize)) && Number(payload.fileSize) > 0 ? Number(payload.fileSize) : 0,
-            fileType : typeof payload.fileType === 'string' ? payload.fileType.slice(0, 100) : ""
+            fileType : typeof payload.fileType === 'string' ? payload.fileType.slice(0, 100) : "",
+            stickerUrl : typeof payload.stickerUrl === 'string' ? payload.stickerUrl : "",
+            audioUrl : typeof payload.audioUrl === 'string' ? payload.audioUrl : ""
         }
-        if (![content.imageUrl, content.videoUrl, content.fileUrl].every(isAllowedMediaUrl)) throw new UserError('Invalid attachment')
-        if (!content.text && !content.imageUrl && !content.videoUrl && !content.fileUrl) throw new UserError('Message is empty')
+        if (![content.imageUrl, content.videoUrl, content.fileUrl, content.audioUrl].every(isAllowedMediaUrl)) throw new UserError('Invalid attachment')
+        if (!isAllowedStickerUrl(content.stickerUrl)) throw new UserError('Invalid sticker')
+        if (content.stickerUrl) {
+            // a sticker is sent on its own, like WhatsApp
+            Object.assign(content, { text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "", audioUrl : "" })
+        }
+        if (content.audioUrl) {
+            const seconds = Number(payload.audioDuration)
+            if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60) throw new UserError('Invalid voice message')
+            content.audioDuration = Math.round(seconds * 10) / 10
+            const wave = Array.isArray(payload.audioWaveform) ? payload.audioWaveform.slice(0, 64) : []
+            content.audioWaveform = wave.map((v) => Math.round(Math.min(1, Math.max(0, Number(v) || 0)) * 100) / 100)
+            Object.assign(content, { text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "" })
+        }
+        if (!content.text && !content.imageUrl && !content.videoUrl && !content.fileUrl && !content.stickerUrl && !content.audioUrl) throw new UserError('Message is empty')
         if (content.fileUrl && !content.fileName) content.fileName = 'Document'
 
         const clientId = typeof payload.clientId === 'string' && payload.clientId.length <= 64 ? payload.clientId : undefined
@@ -703,6 +718,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         if (String(msg.msgByUserId) !== me || msg.system?.action || msg.call?.media) throw new UserError('You can only edit your own messages')
         if (msg.deletedForEveryone) throw new UserError('This message was deleted')
         if (msg.forwarded) throw new UserError('Forwarded messages cannot be edited')
+        if (msg.stickerUrl || msg.audioUrl) throw new UserError('Stickers and voice messages cannot be edited')
         if (Date.now() - new Date(msg.createdAt).getTime() > LIMITS.EDIT_WINDOW_MS) throw new UserError('Messages can only be edited within 15 minutes')
         const newText = cleanText(text)
         const hasMedia = msg.imageUrl || msg.videoUrl || msg.fileUrl
@@ -734,6 +750,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
                 $set : {
                     deletedForEveryone : true, deletedAt : new Date(),
                     text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "",
+                    stickerUrl : "", audioUrl : "", audioDuration : 0, audioWaveform : [],
                     reactions : [], pinned : false
                 }
             })
@@ -828,7 +845,9 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         const failed = []
         const content = (m) => ({
             text : m.text, imageUrl : m.imageUrl, videoUrl : m.videoUrl,
-            fileUrl : m.fileUrl, fileName : m.fileName, fileSize : m.fileSize, fileType : m.fileType
+            fileUrl : m.fileUrl, fileName : m.fileName, fileSize : m.fileSize, fileType : m.fileType,
+            stickerUrl : m.stickerUrl || "", audioUrl : m.audioUrl || "", audioDuration : m.audioDuration || 0,
+            ...(m.audioWaveform ? { audioWaveform : m.audioWaveform } : {})
         })
         for (const target of [...peers.map((p) => ({ peer : p })), ...groups.map((g) => ({ group : g }))]) {
             try {

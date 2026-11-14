@@ -10,7 +10,7 @@ import { IoChatbubbleEllipses } from "react-icons/io5";
 import MadeBy from '../components/MadeBy'
 import { showNotification, playNotificationSound, unlockSound, setFaviconBadge, registerNotificationWorker } from '../helpers/preferences'
 import { socketCall } from '../helpers/socketCall'
-import { plainPreview } from '../helpers/formatText'
+import { messagePreview } from '../helpers/formatText'
 import { systemText } from '../helpers/groupText'
 import { displayName } from '../helpers/contacts'
 import CallProvider from '../components/CallManager'
@@ -165,7 +165,7 @@ const Home = () => {
         const res = await socketCall(socket, 'get-peer', peerId)
         sender = res.ok ? res.peer : null
       }
-      const content = message.system ? systemText(message, me) : message.call ? `📞 Missed ${message.call.type === 'video' ? 'video' : 'voice'} call` : message.text ? plainPreview(message.text) : message.imageUrl ? '📷 Photo' : message.videoUrl ? '🎥 Video' : message.fileName ? `📄 ${message.fileName}` : 'New message'
+      const content = message.system ? systemText(message, me) : message.call ? `📞 Missed ${message.call.type === 'video' ? 'video' : 'voice'} call` : messagePreview(message)
       const body = isGroup && authorName ? `${authorName}: ${content}` : content
       showNotification({
         title : displayName(sender, contacts, me) || 'Chatify',

@@ -17,7 +17,7 @@ const LIMITS = {
     GROUP_DESC_MAX : 512
 }
 
-const REPLY_FIELDS = 'text imageUrl videoUrl fileName msgByUserId deletedForEveryone createdAt'
+const REPLY_FIELDS = 'text imageUrl videoUrl fileName stickerUrl audioUrl audioDuration msgByUserId deletedForEveryone createdAt'
 
 const isValidId = (id) => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id
 const idOf = (v) => (v && v._id ? String(v._id) : String(v))
@@ -34,6 +34,10 @@ const isAllowedMediaUrl = (url) => {
         return false
     }
 }
+
+// stickers: our Cloudinary uploads, or Google's animated Noto emoji
+const NOTO_STICKER = /^https:\/\/fonts\.gstatic\.com\/s\/e\/notoemoji\/latest\/[0-9a-f_]{2,60}\/512\.webp$/
+const isAllowedStickerUrl = (url) => !url || (typeof url === 'string' && (NOTO_STICKER.test(url) || isAllowedMediaUrl(url)))
 
 /* ---------------- users ---------------- */
 
@@ -219,6 +223,9 @@ const serializeReply = (r) => {
         imageUrl : deleted ? "" : r.imageUrl,
         videoUrl : deleted ? "" : r.videoUrl,
         fileName : deleted ? "" : r.fileName,
+        stickerUrl : deleted ? "" : r.stickerUrl,
+        audioUrl : deleted ? "" : r.audioUrl,
+        audioDuration : deleted ? 0 : r.audioDuration,
         deleted
     }
 }
@@ -243,6 +250,10 @@ const serializeMessage = (m, viewerId, { receipts = true } = {}) => {
         fileName : deleted ? "" : o.fileName,
         fileSize : deleted ? 0 : o.fileSize,
         fileType : deleted ? "" : o.fileType,
+        stickerUrl : deleted ? "" : (o.stickerUrl || ""),
+        audioUrl : deleted ? "" : (o.audioUrl || ""),
+        audioDuration : deleted ? 0 : (o.audioDuration || 0),
+        audioWaveform : deleted ? undefined : o.audioWaveform,
         forwarded : !deleted && !!o.forwarded,
         editedAt : deleted ? undefined : o.editedAt,
         deletedForEveryone : deleted,
@@ -305,6 +316,7 @@ module.exports = {
     idOf,
     escapeRegex,
     isAllowedMediaUrl,
+    isAllowedStickerUrl,
     hasBlocked,
     contactOf,
     visibleTo,

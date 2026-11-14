@@ -8,6 +8,10 @@ import router from './routes/Routes';
 import { Provider } from 'react-redux';
 import { store } from './redux/store';
 import axios from 'axios';
+import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
+
+// Windows has no flag emojis (it shows "IN" instead of 🇮🇳): load a small flag-only font there, from our own site
+polyfillCountryFlagEmojis('Twemoji Country Flags', `${process.env.PUBLIC_URL}/fonts/TwemojiCountryFlags.woff2`);
 
 // send the login token with every request to our own backend (not to Cloudinary)
 axios.interceptors.request.use((config) => {

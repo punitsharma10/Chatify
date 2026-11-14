@@ -8,6 +8,7 @@ import { MdOutlineEmojiEmotions } from 'react-icons/md'
 import { formatBubbleTime } from '../helpers/formatTime'
 import { renderFormatted, plainPreview } from '../helpers/formatText'
 import { thumbUrl, videoPoster, formatBytes, fileExtension, downloadMedia } from '../helpers/media'
+import { VoicePlayer, formatClock } from './Voice'
 
 // delivery state of my own message
 export const statusOf = (msg) => {
@@ -36,7 +37,7 @@ export const ReplyQuote = ({ reply, mine, authorName, onClick, compact = false }
     ? 'This message was deleted'
     : reply.text
       ? plainPreview(reply.text)
-      : media === 'image' ? '📷 Photo' : media === 'video' ? '🎥 Video' : reply.fileName ? `📄 ${reply.fileName}` : 'Message'
+      : media === 'image' ? '📷 Photo' : media === 'video' ? '🎥 Video' : reply.stickerUrl ? 'Sticker' : reply.audioUrl ? `🎤 Voice message${reply.audioDuration ? ` (${formatClock(reply.audioDuration)})` : ''}` : reply.fileName ? `📄 ${reply.fileName}` : 'Message'
   return (
     <button
       type='button'
@@ -50,6 +51,7 @@ export const ReplyQuote = ({ reply, mine, authorName, onClick, compact = false }
       </span>
       {media === 'image' && <img src={thumbUrl(reply.imageUrl, 120)} alt='' className='h-14 w-14 shrink-0 object-cover' />}
       {media === 'video' && <img src={videoPoster(reply.videoUrl)} alt='' className='h-14 w-14 shrink-0 bg-black object-cover' />}
+      {!media && reply.stickerUrl && !reply.deleted && <img src={reply.stickerUrl.replace(/\/512\.webp$/, '/emoji.svg')} alt='' className='h-14 w-14 shrink-0 object-contain p-1' />}
     </button>
   )
 }
@@ -74,7 +76,9 @@ const MessageBubble = ({
   const hasVideo = !!(msg.videoUrl || (msg.localPreview && msg.kind === 'video'))
   const hasFile = !!(msg.fileUrl || (msg.kind === 'file' && msg.fileName))
   const hasMedia = !deleted && (hasImage || hasVideo)
-  const mediaOnly = hasMedia && !msg.text
+  const isSticker = !deleted && !!msg.stickerUrl
+  const isVoice = !deleted && !!(msg.audioUrl || msg.kind === 'voice')
+  const mediaOnly = (hasMedia && !msg.text) || isSticker
   const local = !!msg.status
 
   const openMenu = () => {
@@ -131,9 +135,9 @@ const MessageBubble = ({
           onTouchEnd={touchEnd}
           onTouchMove={touchEnd}
           className={`relative max-w-[85%] select-text rounded-lg shadow-bubble transition-[box-shadow,background-color] duration-500 sm:max-w-[75%] lg:max-w-[65%]
-            ${mine ? 'bg-wa-light' : 'bg-white'}
-            ${firstOfGroup ? (mine ? 'rounded-tr-none bubble-tail-out' : 'rounded-tl-none bubble-tail-in') : ''}
-            ${hasMedia ? 'p-1' : 'px-2 pb-2 pt-1.5'}
+            ${isSticker ? 'bg-transparent !shadow-none' : mine ? 'bg-wa-light' : 'bg-white'}
+            ${firstOfGroup && !isSticker ? (mine ? 'rounded-tr-none bubble-tail-out' : 'rounded-tl-none bubble-tail-in') : ''}
+            ${isSticker ? 'p-0' : hasMedia ? 'p-1' : 'px-2 pb-2 pt-1.5'}
             ${highlighted ? 'ring-2 ring-[#ffd166] ring-offset-2 ring-offset-transparent' : ''}
             ${(msg.reactions || []).length ? 'mb-4' : ''}`}
           style={{ minWidth : msg.fileUrl || msg.kind === 'file' ? 240 : undefined }}
@@ -176,6 +180,29 @@ const MessageBubble = ({
             </p>
           ) : (
             <>
+              {/* sticker: no bubble, just the (animated) picture */}
+              {isSticker && (
+                <div className='relative'>
+                  <img src={msg.stickerUrl} alt='Sticker' loading='lazy' draggable={false} className='h-[140px] w-[140px] object-contain sm:h-[160px] sm:w-[160px]' />
+                  <span className='absolute bottom-1 right-1 rounded-full bg-black/35 px-1.5 py-1'>{meta}</span>
+                </div>
+              )}
+
+              {/* voice message */}
+              {isVoice && (
+                <div className='relative pb-3'>
+                  <VoicePlayer
+                    url={msg.audioUrl || msg.audioLocal}
+                    duration={msg.audioDuration}
+                    waveform={msg.audioWaveform}
+                    mine={mine}
+                    uploading={msg.status === 'uploading'}
+                    progress={msg.progress}
+                  />
+                  <span className='absolute -bottom-1 right-0'>{meta}</span>
+                </div>
+              )}
+
               {hasImage && (
                 <button type='button' onClick={(e) => { e.stopPropagation(); !selectMode && onOpenMedia(msg) }} className='relative block w-full overflow-hidden rounded-md'>
                   <img
@@ -220,7 +247,7 @@ const MessageBubble = ({
                 </div>
               )}
 
-              <div className={`relative ${hasMedia ? (msg.text ? 'px-1.5 pb-1 pt-1' : '') : ''}`}>
+              {!isSticker && !isVoice && <div className={`relative ${hasMedia ? (msg.text ? 'px-1.5 pb-1 pt-1' : '') : ''}`}>
                 {msg.text && (
                   <span className='whitespace-pre-wrap break-words text-[14.2px] leading-[19px] text-wa-text'>
                     {renderFormatted(msg.text, searchTerm)}
@@ -231,7 +258,7 @@ const MessageBubble = ({
                 <span className={mediaOnly ? 'absolute bottom-1.5 right-1.5 rounded-full bg-black/35 px-1.5 py-1' : 'absolute -bottom-1 right-0'}>
                   {meta}
                 </span>
-              </div>
+              </div>}
             </>
           )}
 

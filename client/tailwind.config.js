@@ -22,7 +22,8 @@ module.exports = {
         },
       },
       fontFamily: {
-        sans: ['"Segoe UI"', "Helvetica Neue", "Helvetica", "Lucida Grande", "Arial", "Ubuntu", "Cantarell", "Fira Sans", "sans-serif"],
+        // "Twemoji Country Flags" only covers flag characters; it's loaded on systems that can't draw flags (Windows)
+        sans: ['"Twemoji Country Flags"', '"Segoe UI"', "Helvetica Neue", "Helvetica", "Lucida Grande", "Arial", "Ubuntu", "Cantarell", "Fira Sans", "sans-serif"],
       },
       boxShadow: {
         bubble: "0 1px 0.5px rgba(11,20,26,.13)",

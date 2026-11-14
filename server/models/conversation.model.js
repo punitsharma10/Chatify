@@ -33,6 +33,12 @@ const messageSchema = new mongoose.Schema({
         type : String,
         default : ""
     },
+    // sticker (animated Noto emoji or your own image), shown without a bubble
+    stickerUrl : { type : String, default : "" },
+    // voice message
+    audioUrl : { type : String, default : "" },
+    audioDuration : { type : Number, default : 0 },          // seconds
+    audioWaveform : { type : [Number], default : undefined }, // ~40 levels between 0 and 1, drawn as bars
     // documents / other attachments
     fileUrl : { type : String, default : "" },
     fileName : { type : String, default : "" },
