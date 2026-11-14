@@ -101,6 +101,8 @@ const getAudio = () => {
   return audioCtx
 }
 
+export const getAudioContext = getAudio
+
 // browsers only allow sound after the user has interacted with the page once
 export const unlockSound = () => {
   const ctx = getAudio()

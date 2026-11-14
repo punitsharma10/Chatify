@@ -1,30 +1,48 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { useSelector } from 'react-redux'
 import { IoSearchOutline, IoArrowBack, IoClose } from "react-icons/io5";
+import { HiUserGroup } from 'react-icons/hi';
 import Loading from './Loading';
 import UserSearchCard from './UserSearchCard';
-import { notifyError } from '../helpers/toast'
+import { notify, notifyError } from '../helpers/toast'
+import { socketCall } from '../helpers/socketCall'
 import axios from 'axios';
 
-const SearchUser = ({ onClose }) => {
-  const [searchUser, setSearchUser] = useState([])
+// "New chat": your contacts, plus anyone you look up by their full phone number or email
+const SearchUser = ({ onClose, onNewGroup }) => {
+  const socket = useSelector((s) => s.user.socketConnection)
+  const contactList = useSelector((s) => s.user.contacts)
+  const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState("")
 
-  // search as you type (short pause so we don't call the server on every keystroke)
+  const load = useCallback(async (q, isCancelled = () => false) => {
+    try {
+      const response = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/searchuser`, { search : q })
+      if (!isCancelled()) setResults(response.data.data || [])
+    } catch (error) {
+      if (!isCancelled()) notifyError(error?.response?.data?.message)
+    }
+    if (!isCancelled()) setLoading(false)
+  }, [])
+
+  // search as you type (short pause so we don't call the server on every keystroke); re-run when contacts change
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    const t = setTimeout(async () => {
-      try {
-        const response = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/searchuser`, { search })
-        if (!cancelled) setSearchUser(response.data.data)
-      } catch (error) {
-        if (!cancelled) notifyError(error?.response?.data?.message)
-      }
-      if (!cancelled) setLoading(false)
-    }, 250)
+    const t = setTimeout(() => load(search, () => cancelled), 250)
     return () => { cancelled = true; clearTimeout(t) }
-  }, [search])
+  }, [search, load, contactList])
+
+  const addContact = async (user) => {
+    const res = await socketCall(socket, 'add-contact', { userId : user._id })
+    if (!res.ok) return notifyError(res.error)
+    notify('Added to your contacts')
+  }
+
+  const contacts = results.filter((u) => u.isContact)
+  const others = results.filter((u) => !u.isContact)
+  const q = search.trim()
 
   return (
     <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-white'>
@@ -44,7 +62,7 @@ const SearchUser = ({ onClose }) => {
           <IoSearchOutline size={17} className='shrink-0 text-[#54656f]' />
           <input
             type='text'
-            placeholder='Search name or email'
+            placeholder='Search contacts, or type a full number / email'
             className='w-full bg-transparent text-base text-wa-text outline-none placeholder:text-[#8696a0] sm:text-sm'
             onChange={(e) => setSearch(e.target.value)}
             value={search}
@@ -60,20 +78,41 @@ const SearchUser = ({ onClose }) => {
 
       {/* results */}
       <div className='min-h-0 flex-1 overflow-y-auto scrollbar'>
-        <p className='px-5 pb-3 pt-5 text-sm uppercase tracking-wide text-wa-teal sm:px-8 sm:pt-6 sm:text-[15px]'>People on Chatify</p>
-
-        {loading && (
-          <div className='py-6'><Loading /></div>
+        {onNewGroup && !q && (
+          <button onClick={onNewGroup} className='flex w-full items-center gap-3 pl-3 pr-4 text-left transition-colors hover:bg-wa-hover'>
+            <span className='flex h-[49px] w-[49px] shrink-0 items-center justify-center rounded-full bg-wa-green text-white'><HiUserGroup size={24} /></span>
+            <span className='min-w-0 flex-1 border-b border-wa-border py-4 text-[17px] text-wa-text'>New group</span>
+          </button>
         )}
 
-        {searchUser.length === 0 && !loading && (
-          <p className='px-8 py-6 text-center text-sm text-wa-muted'>No users found</p>
+        {loading && <div className='py-6'><Loading /></div>}
+
+        {!loading && contacts.length > 0 && (
+          <>
+            <p className='px-5 pb-3 pt-5 text-sm uppercase tracking-wide text-wa-teal sm:px-8 sm:text-[15px]'>Contacts on Chatify</p>
+            {contacts.map((user) => <UserSearchCard key={user._id} user={user} onClose={onClose} />)}
+          </>
         )}
 
-        {searchUser.length !== 0 && !loading && (
-          searchUser.map((user) => (
-            <UserSearchCard key={user._id} user={user} onClose={onClose} />
-          ))
+        {!loading && others.length > 0 && (
+          <>
+            <p className='px-5 pb-3 pt-5 text-sm uppercase tracking-wide text-wa-teal sm:px-8 sm:text-[15px]'>Not in your contacts</p>
+            {others.map((user) => <UserSearchCard key={user._id} user={user} onClose={onClose} onAdd={user.self ? undefined : () => addContact(user)} />)}
+          </>
+        )}
+
+        {!loading && results.length === 0 && (
+          <div className='px-8 py-8 text-center'>
+            <p className='text-sm text-wa-text'>{q ? 'No contact or account found' : 'No contacts yet'}</p>
+            <p className='mt-2 text-sm leading-5 text-wa-muted'>
+              To find someone new, type their <b className='font-medium text-wa-text'>full phone number</b> (e.g. +91 98765 43210) or their <b className='font-medium text-wa-text'>full email</b>.
+              Chatify never shows a list of everyone, so only people who already know your number or email can find you.
+            </p>
+          </div>
+        )}
+
+        {!loading && results.length > 0 && !q && (
+          <p className='px-8 py-6 text-center text-xs leading-5 text-wa-muted'>Looking for someone else? Type their full phone number or email above.</p>
         )}
       </div>
     </div>

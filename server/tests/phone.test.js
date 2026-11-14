@@ -44,8 +44,13 @@ const registerPhone = async (phone, name) => {
   const pw = await post('/api/password', { userId: login1.body.data._id, password: 'secret123' })
   check('log in with phone + password', pw.body.success === true)
 
-  const search = await post('/api/searchuser', { search: phone2.slice(-6) }, pw.body.token)
-  check('people can be found by phone number in New chat', search.status === 200 && search.body.data.some((u) => u.phone === phone2))
+  const partialPhone = await post('/api/searchuser', { search: phone2.slice(-6) }, pw.body.token)
+  check('part of a number does not reveal anyone', partialPhone.status === 200 && !partialPhone.body.data.some((u) => u.phone === phone2))
+  const spaced = phone2.slice(0, 3) + ' ' + phone2.slice(3, 8) + '-' + phone2.slice(8)
+  const search = await post('/api/searchuser', { search: spaced }, pw.body.token)
+  check('the full number (spaces/dashes ok) finds them in New chat', search.status === 200 && search.body.data.some((u) => u.phone === phone2))
+  const local = await post('/api/searchuser', { search: phone2.slice(3) }, pw.body.token)
+  check('a 10-digit Indian number without +91 finds them', !phone2.startsWith('+91') || local.body.data.some((u) => u.phone === phone2))
 
   // forgot password by SMS
   const rs = await post('/api/otp/send', { phone: phone1, purpose: 'reset' })

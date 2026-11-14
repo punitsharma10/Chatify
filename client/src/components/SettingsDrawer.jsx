@@ -59,7 +59,7 @@ const SettingsDrawer = ({ onClose }) => {
   return (
     <Drawer title='Settings' onClose={onClose} className='bg-wa-panel'>
       <Section icon={<IoLockClosedOutline size={18} />} title='Privacy'>
-        <p className='px-6 pb-2 text-xs text-wa-muted'>Choose who can see your info. If you hide your last seen or online status you can still see other people's.</p>
+        <p className='px-6 pb-2 text-xs text-wa-muted'>Choose who can see your info. "My contacts" means people you have saved. If you hide your last seen or online status you can still see other people's.</p>
         {PRIVACY_ROWS.map((row) => (
           <div key={row.key} className='flex items-center justify-between gap-4 px-6 py-2.5'>
             <span className='text-[15px] text-wa-text'>{row.label}</span>
@@ -70,10 +70,26 @@ const SettingsDrawer = ({ onClose }) => {
               className='rounded-md border border-wa-border bg-white px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'
             >
               <option value='everyone'>Everyone</option>
+              <option value='contacts'>My contacts</option>
               <option value='nobody'>Nobody</option>
             </select>
           </div>
         ))}
+        <div className='flex items-center justify-between gap-4 px-6 py-2.5'>
+          <div>
+            <p className='text-[15px] text-wa-text'>Groups</p>
+            <p className='text-xs text-wa-muted'>Who can add you to groups</p>
+          </div>
+          <select
+            value={privacy.groups || 'everyone'}
+            disabled={saving}
+            onChange={(e) => savePrivacy({ groups : e.target.value })}
+            className='rounded-md border border-wa-border bg-white px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'
+          >
+            <option value='everyone'>Everyone</option>
+            <option value='contacts'>My contacts</option>
+          </select>
+        </div>
         <div className='flex items-center justify-between gap-4 px-6 py-3'>
           <div>
             <p className='text-[15px] text-wa-text'>Read receipts</p>

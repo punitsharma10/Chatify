@@ -8,6 +8,12 @@ import EditUserDetails from './EditUserDetails';
 import SearchUser from './SearchUser';
 import StarredMessages from './StarredMessages';
 import SettingsDrawer from './SettingsDrawer';
+import NewGroup from './NewGroup';
+import { systemText } from '../helpers/groupText';
+import { usePeopleNames } from '../helpers/contacts';
+import { IoMailUnreadOutline, IoCall } from "react-icons/io5";
+import { MdOutlineGroupAdd, MdOutlinePersonAddAlt } from "react-icons/md";
+import { IoExitOutline } from "react-icons/io5";
 import PopoverMenu from './PopoverMenu';
 import Dialog from './Dialog';
 import { StatusIcon, statusOf } from './MessageBubble';
@@ -29,7 +35,7 @@ const SideBar = () => {
   const user = useSelector(state => state?.user)
   const { conversations, loaded, typing } = useSelector(state => state.chat)
   const socketConnection = user.socketConnection
-  const [drawer, setDrawer] = useState(null) // profile | search | starred | settings
+  const [drawer, setDrawer] = useState(null) // profile | search | newgroup | starred | settings
   const [menuOpen, setMenuOpen] = useState(false)
   const [filterText, setFilterText] = useState("")
   const [filter, setFilter] = useState("all")
@@ -40,6 +46,7 @@ const SideBar = () => {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const pressTimer = useRef(null)
+  const people = usePeopleNames()
 
   // WhatsApp-style "turn on desktop notifications" banner
   const [notifyPerm, setNotifyPerm] = useState(notificationPermission())
@@ -79,19 +86,23 @@ const SideBar = () => {
     return () => clearTimeout(t)
   }, [filterText, socketConnection])
 
-  const archivedCount = conversations.filter(c => c.archived).length
-  const unreadCount = conversations.filter(c => !c.archived && (c.unseenMsg || c.markedUnread)).length
+  const requestCount = conversations.filter(c => c.request).length
+  const archivedCount = conversations.filter(c => c.archived && !c.request).length
+  const unreadCount = conversations.filter(c => !c.archived && !c.request && (c.unseenMsg || c.markedUnread)).length
 
   const visibleChats = useMemo(() => {
     const q = filterText.trim().toLowerCase()
     return conversations.filter(conv => {
+      // message requests only appear in their own list
+      if (filter === "requests") return !!conv.request && (!q || people.name(conv.userDetails).toLowerCase().includes(q))
+      if (conv.request) return false
       if (filter === "archived") { if (!conv.archived) return false }
       else if (conv.archived && !q) return false
       if (filter === "unread" && !(conv?.unseenMsg || conv?.markedUnread)) return false
-      if (q && !conv?.userDetails?.name?.toLowerCase().includes(q)) return false
+      if (q && !people.name(conv?.userDetails).toLowerCase().includes(q) && !conv?.userDetails?.name?.toLowerCase().includes(q)) return false
       return true
     })
-  }, [conversations, filterText, filter])
+  }, [conversations, filterText, filter, people])
 
   const chatAction = useCallback(async (conv, action) => {
     const res = await socketCall(socketConnection, 'chat-action', { peerId : conv.userDetails._id, action })
@@ -107,8 +118,22 @@ const SideBar = () => {
     if (action === 'delete' && window.location.pathname === `/${conv.userDetails._id}`) navigate('/')
   }, [socketConnection, navigate])
 
+  const exitGroup = useCallback(async (conv) => {
+    const res = await socketCall(socketConnection, 'group-leave', { groupId : conv._id })
+    if (!res.ok) return notifyError(res.error)
+    notify(`You left "${conv.userDetails.name}"`)
+  }, [socketConnection])
+
   const askConfirm = (conv, action) => {
-    const name = conv.userDetails.name
+    const name = people.name(conv.userDetails)
+    if (conv.isGroup) {
+      setConfirm(action === 'exit'
+        ? { title : `Exit "${name}"?`, body : 'You will no longer receive messages from this group. Group members will see that you left.', action, conv, label : 'Exit group' }
+        : action === 'clear'
+          ? { title : 'Clear this chat?', body : 'Messages in this group will be removed for you only.', action, conv, label : 'Clear chat' }
+          : { title : `Delete "${name}"?`, body : 'The group and its messages will be removed from your chat list.', action, conv, label : 'Delete group' })
+      return
+    }
     setConfirm(action === 'clear'
       ? { title : `Clear this chat?`, body : `Messages with ${name} will be removed from this device. ${name} will still have them.`, action, conv, label : 'Clear chat' }
       : { title : `Delete chat with ${name}?`, body : `The chat and its messages will be removed for you only. ${name} keeps their copy.`, action, conv, label : 'Delete chat' })
@@ -120,22 +145,38 @@ const SideBar = () => {
     { label : conv.pinned ? 'Unpin chat' : 'Pin chat', icon : <BsPinAngle size={17} />, onClick : () => chatAction(conv, conv.pinned ? 'unpin' : 'pin'), hidden : conv.archived },
     { label : (conv.unseenMsg || conv.markedUnread) ? 'Mark as read' : 'Mark as unread', icon : (conv.unseenMsg || conv.markedUnread) ? <MdOutlineMarkChatRead size={18} /> : <MdOutlineMarkChatUnread size={18} />, onClick : () => chatAction(conv, (conv.unseenMsg || conv.markedUnread) ? 'mark-read' : 'mark-unread') },
     { label : 'Clear chat', icon : <MdOutlineCleaningServices size={18} />, onClick : () => askConfirm(conv, 'clear') },
-    { label : 'Delete chat', icon : <IoTrashOutline size={18} />, danger : true, onClick : () => askConfirm(conv, 'delete') },
+    { label : 'Exit group', icon : <IoExitOutline size={18} />, danger : true, hidden : !(conv.isGroup && conv.isMember), onClick : () => askConfirm(conv, 'exit') },
+    { label : conv.isGroup ? 'Delete group' : 'Delete chat', icon : <IoTrashOutline size={18} />, danger : true, hidden : conv.isGroup && conv.isMember, onClick : () => askConfirm(conv, 'delete') },
   ]
 
   const openChatMenu = (conv, anchor) => setChatMenu({ conv, anchor })
 
   const lastMessagePreview = (conv) => {
     const last = conv?.lastMsg
-    if (typing[conv.userDetails?._id]) return <span className='font-medium text-wa-green'>typing…</span>
+    const typer = typing[conv.userDetails?._id]
+    if (typer) return <span className='truncate font-medium text-wa-green'>{typeof typer === 'string' ? `${typer} is typing…` : 'typing…'}</span>
     if (!last) return null
+    if (last.system) return <span className='truncate'>{systemText(last, user._id)}</span>
+    if (last.call) {
+      const mineCall = String(last.msgByUserId) === String(user._id)
+      const missed = last.call.status !== 'answered' && !mineCall && !last.call.group
+      const kind = last.call.type === 'video' ? 'video' : 'voice'
+      return (
+        <span className={`flex min-w-0 items-center gap-1 ${missed ? 'text-red-500' : ''}`}>
+          {last.call.type === 'video' ? <IoVideocam size={16} className='shrink-0' /> : <IoCall size={15} className='shrink-0' />}
+          <span className='truncate'>{last.call.group ? `Group ${kind} call` : missed ? `Missed ${kind} call` : `${kind === 'video' ? 'Video' : 'Voice'} call`}</span>
+        </span>
+      )
+    }
     const sentByMe = String(last.msgByUserId) === String(user._id)
+    const author = conv.isGroup && !sentByMe && (last.author || last.authorName) ? <span className='shrink-0'>{last.author ? people.name(last.author) : last.authorName}:</span> : null
     if (last.deletedForEveryone) {
       return <span className='flex items-center gap-1 italic'><IoBan size={14} /> {sentByMe ? 'You deleted this message' : 'This message was deleted'}</span>
     }
     return (
       <>
         {sentByMe && <StatusIcon status={statusOf(last)} size={17} />}
+        {author}
         {last.imageUrl && <span className='flex shrink-0 items-center gap-1'><IoCamera size={16} />{!last.text && <span>Photo</span>}</span>}
         {last.videoUrl && <span className='flex shrink-0 items-center gap-1'><IoVideocam size={16} />{!last.text && <span>Video</span>}</span>}
         {last.fileUrl && <span className='flex min-w-0 items-center gap-1'><IoDocumentOutline size={15} className='shrink-0' />{!last.text && <span className='truncate'>{last.fileName}</span>}</span>}
@@ -154,7 +195,7 @@ const SideBar = () => {
 
         <div className='relative flex items-center gap-1'>
           <button className='wa-icon-btn' title='New chat' onClick={() => setDrawer('search')}>
-            <MdOutlineChat size={22} />
+            <MdOutlinePersonAddAlt size={22} />
           </button>
           <button className={`wa-icon-btn ${menuOpen ? "bg-black/10" : ""}`} title='Menu' onClick={() => setMenuOpen(o => !o)}>
             <HiDotsVertical size={20} />
@@ -165,6 +206,7 @@ const SideBar = () => {
               <div className='fixed inset-0 z-20' onClick={() => setMenuOpen(false)} />
               <div className='absolute right-0 top-11 z-30 w-56 origin-top-right animate-pop rounded-md bg-white py-2 shadow-menu'>
                 {[
+                  ['New group', <MdOutlineGroupAdd size={17} />, () => setDrawer('newgroup')],
                   ['New chat', <MdOutlineChat size={16} />, () => setDrawer('search')],
                   ['Starred messages', <IoStarOutline size={16} />, () => setDrawer('starred')],
                   ['Archived chats', <MdOutlineArchive size={17} />, () => setFilter('archived')],
@@ -252,10 +294,27 @@ const SideBar = () => {
           </div>
         )}
 
+        {filter === 'requests' && (
+          <p className='border-b border-wa-border px-5 py-3 text-center text-xs text-wa-muted'>
+            Messages from people who aren't in your contacts. They won't see that you read them until you accept. <button onClick={() => setFilter('all')} className='font-medium text-wa-green hover:underline'>Back to all chats</button>
+          </p>
+        )}
+
         {filter === 'archived' && (
           <p className='border-b border-wa-border px-5 py-3 text-center text-xs text-wa-muted'>
             Archived chats stay archived when new messages arrive. <button onClick={() => setFilter('all')} className='font-medium text-wa-green hover:underline'>Back to all chats</button>
           </p>
+        )}
+
+        {/* message requests row */}
+        {loaded && filter === 'all' && requestCount > 0 && !filterText.trim() && (
+          <button onClick={() => setFilter('requests')} className='flex w-full items-center gap-3 pl-3 pr-4 text-left transition-colors hover:bg-wa-hover'>
+            <span className='flex h-[49px] w-[49px] shrink-0 items-center justify-center text-wa-teal'><IoMailUnreadOutline size={22} /></span>
+            <span className='flex min-w-0 flex-1 items-center justify-between border-b border-wa-border py-4'>
+              <span className='text-[17px] text-wa-text'>Message requests</span>
+              <span className='flex h-5 min-w-[20px] items-center justify-center rounded-full bg-wa-badge px-1.5 text-xs font-medium text-white'>{requestCount}</span>
+            </span>
+          </button>
         )}
 
         {/* WhatsApp-style 'Archived' row at the top of the list */}
@@ -269,9 +328,9 @@ const SideBar = () => {
           </button>
         )}
 
-        {loaded && conversations.length > 0 && visibleChats.length === 0 && !(filter === 'all' && archivedCount > 0 && !filterText.trim()) && (
+        {loaded && conversations.length > 0 && visibleChats.length === 0 && !(filter === 'all' && (archivedCount > 0 || requestCount > 0) && !filterText.trim()) && (
           <p className='px-8 pt-10 text-center text-sm text-wa-muted'>
-            {filter === 'archived' ? 'No archived chats' : filter === 'unread' ? 'No unread chats' : 'No chats found'}
+            {filter === 'archived' ? 'No archived chats' : filter === 'requests' ? 'No message requests' : filter === 'unread' ? 'No unread chats' : 'No chats found'}
           </p>
         )}
 
@@ -296,10 +355,10 @@ const SideBar = () => {
               onTouchMove={() => { clearTimeout(pressTimer.current); pressTimer.current = null }}
               className={({ isActive }) => `group/chat flex select-none items-center gap-3 pl-3 pr-4 transition-colors ${isActive ? "bg-wa-panel" : "hover:bg-wa-hover"}`}
             >
-              <Avatar imageUrl={peer.profile_pic} name={peer.name} userId={peer._id} width={49} height={49} />
+              <Avatar imageUrl={peer.profile_pic} name={peer.name} userId={conv.isGroup ? undefined : peer._id} group={conv.isGroup} width={49} height={49} />
               <div className='min-w-0 flex-1 border-b border-wa-border py-3'>
                 <div className='flex items-baseline justify-between gap-2'>
-                  <h3 className='truncate text-[17px] text-wa-text'>{peer.name}{peer.self ? ' (You)' : ''}</h3>
+                  <h3 className='truncate text-[17px] text-wa-text'>{people.name(peer)}{peer.self ? ' (You)' : ''}</h3>
                   <span className={`shrink-0 text-xs ${(unread || conv.markedUnread) && !conv.muted ? "font-medium text-wa-badge" : "text-wa-muted"}`}>
                     {formatListTime(conv?.lastMsg?.createdAt || conv.lastActivity)}
                   </span>
@@ -336,18 +395,18 @@ const SideBar = () => {
             <p className='px-5 pb-1 pt-4 text-sm text-wa-teal'>Messages</p>
             {searching && <p className='px-5 py-3 text-sm text-wa-muted'>Searching…</p>}
             {!searching && messageResults.length === 0 && <p className='px-5 py-3 text-sm text-wa-muted'>No messages found</p>}
-            {!searching && messageResults.map(({ message, peer }) => (
+            {!searching && messageResults.map(({ message, peer, authorName, author }) => (
               <button
                 key={message._id}
                 onClick={() => navigate('/' + peer._id, { state : { jumpTo : { _id : message._id, createdAt : message.createdAt }, highlight : filterText.trim() } })}
                 className='block w-full border-b border-wa-border px-5 py-3 text-left hover:bg-wa-hover'
               >
                 <div className='flex items-baseline justify-between gap-2'>
-                  <span className='truncate text-[15px] text-wa-text'>{peer?.name}</span>
+                  <span className='truncate text-[15px] text-wa-text'>{people.name(peer)}</span>
                   <span className='shrink-0 text-xs text-wa-muted'>{formatListTime(message.createdAt)}</span>
                 </div>
                 <p className='mt-0.5 line-clamp-2 text-sm text-wa-muted'>
-                  {String(message.msgByUserId) === String(user._id) && 'You: '}
+                  {String(message.msgByUserId) === String(user._id) ? 'You: ' : peer?.isGroup && (author || authorName) ? `${author ? people.name(author) : authorName}: ` : ''}
                   {renderFormatted(message.text, filterText.trim())}
                 </p>
               </button>
@@ -366,7 +425,7 @@ const SideBar = () => {
           onClose={() => setConfirm(null)}
           actions={[
             { label : 'Cancel', onClick : () => setConfirm(null) },
-            { label : confirm.label, danger : true, onClick : () => { chatAction(confirm.conv, confirm.action); setConfirm(null) } },
+            { label : confirm.label, danger : true, onClick : () => { confirm.action === 'exit' ? exitGroup(confirm.conv) : chatAction(confirm.conv, confirm.action); setConfirm(null) } },
           ]}
         >
           {confirm.body}
@@ -374,7 +433,8 @@ const SideBar = () => {
       )}
 
       {drawer === 'profile' && <EditUserDetails onClose={() => setDrawer(null)} user={user} />}
-      {drawer === 'search' && <SearchUser onClose={() => setDrawer(null)} />}
+      {drawer === 'search' && <SearchUser onClose={() => setDrawer(null)} onNewGroup={() => setDrawer('newgroup')} />}
+      {drawer === 'newgroup' && <NewGroup onClose={() => setDrawer(null)} />}
       {drawer === 'starred' && <StarredMessages onClose={() => setDrawer(null)} />}
       {drawer === 'settings' && <SettingsDrawer onClose={() => setDrawer(null)} />}
     </div>

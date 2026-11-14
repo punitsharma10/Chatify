@@ -27,4 +27,14 @@ const makeUser = async (name, uid, profile_pic = '') => {
   const p = await post('/api/password', { userId: e.body.data._id, password: 'secret123' })
   return { id: e.body.data._id, token: p.body.token, name, email }
 }
-module.exports = { post, readCode, makeUser, sleep }
+// everyone saves everyone as a contact (friends), so first messages aren't message requests
+const befriend = async (...users) => {
+  const { io } = require('socket.io-client')
+  for (const u of users) {
+    const s = io(API, { transports: ['websocket'], auth: { token: u.token, client: 'v2' }, forceNew: true, reconnection: false })
+    await new Promise((resolve, reject) => { s.on('connect', resolve); s.on('connect_error', reject) })
+    for (const o of users) if (o !== u) await new Promise((r) => s.emit('add-contact', { userId: o.id }, r))
+    s.disconnect()
+  }
+}
+module.exports = { post, readCode, makeUser, sleep, befriend }

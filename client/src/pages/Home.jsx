@@ -2,8 +2,8 @@ import axios from 'axios'
 import React, { useEffect, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { logout, setConnected, setOnlineUser, setSocketConnection, setUser } from '../redux/userSlice'
-import { resetChat, setConversations, setTyping } from '../redux/chatSlice'
+import { logout, setConnected, setOnlineUser, setSocketConnection, setUser, setContacts } from '../redux/userSlice'
+import { resetChat, setConversations, setTyping, upsertConversation, removeConversation } from '../redux/chatSlice'
 import Sidebar from '../components/SideBar'
 import io from 'socket.io-client'
 import { IoChatbubbleEllipses } from "react-icons/io5";
@@ -11,6 +11,9 @@ import MadeBy from '../components/MadeBy'
 import { showNotification, playNotificationSound, unlockSound, setFaviconBadge, registerNotificationWorker } from '../helpers/preferences'
 import { socketCall } from '../helpers/socketCall'
 import { plainPreview } from '../helpers/formatText'
+import { systemText } from '../helpers/groupText'
+import { displayName } from '../helpers/contacts'
+import CallProvider from '../components/CallManager'
 
 const Home = () => {
   const dispatch = useDispatch()
@@ -18,10 +21,11 @@ const Home = () => {
   const location = useLocation()
   const myId = useSelector((s) => s.user._id)
   const conversations = useSelector((s) => s.chat.conversations)
+  const contactList = useSelector((s) => s.user.contacts)
 
   // latest values for socket handlers registered once
   const live = useRef({})
-  live.current = { myId, conversations, path : location.pathname }
+  live.current = { myId, conversations, path : location.pathname, contacts : Object.fromEntries((contactList || []).map((c) => [c.userId, c])) }
 
   const handleLogout = () => {
     dispatch(logout())
@@ -93,6 +97,9 @@ const Home = () => {
 
     socket.on('onlineUser', (data) => dispatch(setOnlineUser(data)))
 
+    // contacts changed (maybe in another tab)
+    socket.on('contacts-updated', ({ contacts }) => dispatch(setContacts(contacts)))
+
     socket.on('conversation', (data) => {
       const me = live.current.myId
       const list = (data || []).map((c) => ({
@@ -102,28 +109,48 @@ const Home = () => {
       dispatch(setConversations(list))
     })
 
-    socket.on('typing', ({ from, isTyping }) => {
-      clearTimeout(typingTimers[from])
-      dispatch(setTyping({ userId : from, isTyping }))
-      // safety net in case the "stopped typing" event is lost
-      if (isTyping) typingTimers[from] = setTimeout(() => dispatch(setTyping({ userId : from, isTyping : false })), 6000)
+    // a single chat-list row changed (group chats)
+    socket.on('conversation-item', ({ item, removeId }) => {
+      if (item) dispatch(upsertConversation(item))
+      else if (removeId) dispatch(removeConversation(removeId))
     })
 
-    socket.on('message-new', ({ peerId, message }) => {
+    // 1:1: { from, isTyping }   group: { from, chat, name, isTyping }
+    socket.on('typing', ({ from, chat, name, phone, isTyping }) => {
+      const key = chat || from
+      clearTimeout(typingTimers[key])
+      const shown = chat ? displayName({ _id : from, name, profileName : name, phone }, live.current.contacts, live.current.myId) : undefined
+      dispatch(setTyping({ userId : key, isTyping, name : shown }))
+      // safety net in case the "stopped typing" event is lost
+      if (isTyping) typingTimers[key] = setTimeout(() => dispatch(setTyping({ userId : key, isTyping : false })), 6000)
+    })
+
+    socket.on('message-new', ({ peerId, message, author, isGroup, request }) => {
       const { myId : me } = live.current
-      if (String(message.msgByUserId) === String(me)) return
+      if (String(message.msgByUserId) === String(me) && !message.system) return
+      if (message.system) {
+        // group notices are silent, except being added to / removed from a group
+        const aboutMe = ['add', 'remove'].includes(message.system.action) && (message.system.targets || []).some((t) => String(t.id) === String(me))
+        if (aboutMe) alertForMessage(peerId, message, { isGroup : true })
+        return
+      }
       // acknowledge delivery to the sender (double grey tick)
       socket.emit('mark-delivered', { ids : [message._id] })
       clearTimeout(typingTimers[peerId])
       dispatch(setTyping({ userId : peerId, isTyping : false }))
 
-      alertForMessage(peerId, message)
+      // call history entries: only a missed call alerts (the ringing itself is handled by the call screen)
+      if (message.call && (message.call.status !== 'missed' || message.call.group)) return
+      // message requests from people you haven't saved stay silent until you accept
+      if (request || live.current.conversations.find((c) => String(c.userDetails?._id) === String(peerId))?.request) return
+      const authorName = author ? displayName({ ...author, profileName : author.name }, live.current.contacts, live.current.myId) : undefined
+      alertForMessage(peerId, message, { authorName, isGroup })
     })
 
     // WhatsApp-style alerts: sound when the message isn't from the chat you're looking at,
     // plus a desktop notification when Chatify isn't the active tab/window. Muted chats stay silent.
-    const alertForMessage = async (peerId, message) => {
-      const { conversations : convs, path } = live.current
+    const alertForMessage = async (peerId, message, { authorName, isGroup } = {}) => {
+      const { conversations : convs, path, myId : me, contacts } = live.current
       const conv = convs.find((c) => String(c.userDetails?._id) === String(peerId))
       if (conv?.muted) return
       const active = document.visibilityState === 'visible' && document.hasFocus()
@@ -138,9 +165,10 @@ const Home = () => {
         const res = await socketCall(socket, 'get-peer', peerId)
         sender = res.ok ? res.peer : null
       }
-      const body = message.text ? plainPreview(message.text) : message.imageUrl ? '📷 Photo' : message.videoUrl ? '🎥 Video' : message.fileName ? `📄 ${message.fileName}` : 'New message'
+      const content = message.system ? systemText(message, me) : message.call ? `📞 Missed ${message.call.type === 'video' ? 'video' : 'voice'} call` : message.text ? plainPreview(message.text) : message.imageUrl ? '📷 Photo' : message.videoUrl ? '🎥 Video' : message.fileName ? `📄 ${message.fileName}` : 'New message'
+      const body = isGroup && authorName ? `${authorName}: ${content}` : content
       showNotification({
-        title : sender?.name || 'Chatify',
+        title : displayName(sender, contacts, me) || 'Chatify',
         body,
         icon : sender?.profile_pic || undefined,
         chatId : peerId,
@@ -161,7 +189,7 @@ const Home = () => {
 
   // unread chats in the tab title, e.g. "(3) Chatify"
   useEffect(() => {
-    const unread = conversations.filter((c) => !c.muted && (c.unseenMsg > 0 || c.markedUnread)).length
+    const unread = conversations.filter((c) => !c.muted && !c.request && (c.unseenMsg > 0 || c.markedUnread)).length
     document.title = unread ? `(${unread}) Chatify` : 'Chatify'
     setFaviconBadge(unread)
     return () => { document.title = 'Chatify'; setFaviconBadge(0) }
@@ -170,6 +198,7 @@ const Home = () => {
   const basePath = location.pathname === '/'
 
   return (
+    <CallProvider>
     <div className='relative h-dvh overflow-hidden bg-white xl:bg-[#dadbd3]'>
       {/* green band behind the app on large screens */}
       <div className='absolute inset-x-0 top-0 hidden h-[127px] bg-wa-green xl:block' />
@@ -203,6 +232,7 @@ const Home = () => {
         </div>
       </div>
     </div>
+    </CallProvider>
   )
 }
 

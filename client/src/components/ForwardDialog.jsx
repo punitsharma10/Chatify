@@ -4,22 +4,24 @@ import { IoSearchOutline, IoSend } from 'react-icons/io5'
 import { BsCheck2 } from 'react-icons/bs'
 import Dialog from './Dialog'
 import Avatar from './Avatar'
+import { usePeopleNames } from '../helpers/contacts'
 
 const MAX_TARGETS = 5
 
 // pick up to 5 chats to forward the selected messages to
 const ForwardDialog = ({ count, onClose, onForward }) => {
-  const me = useSelector((s) => s.user._id)
   const conversations = useSelector((s) => s.chat.conversations)
+  const names = usePeopleNames()
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState([])
   const [sending, setSending] = useState(false)
 
   const people = useMemo(() => {
-    const list = conversations.map((c) => (String(c.sender._id) === String(me) ? c.receiver : c.sender))
+    // people and groups you can still write to
+    const list = conversations.filter((c) => c.userDetails && (!c.isGroup || c.isMember)).map((c) => c.userDetails)
     const q = query.trim().toLowerCase()
-    return list.filter((p) => !p.blockedByMe && (!q || p.name.toLowerCase().includes(q)))
-  }, [conversations, me, query])
+    return list.filter((p) => !p.blockedByMe && (!q || names.name(p).toLowerCase().includes(q)))
+  }, [conversations, query, names])
 
   const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_TARGETS ? p : [...p, id]))
 
@@ -55,10 +57,10 @@ const ForwardDialog = ({ count, onClose, onForward }) => {
               <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${on ? 'border-wa-green bg-wa-green text-white' : 'border-[#8696a0]'}`}>
                 {on && <BsCheck2 size={14} />}
               </span>
-              <Avatar width={40} height={40} name={p.name} imageUrl={p.profile_pic} />
+              <Avatar width={40} height={40} name={p.name} imageUrl={p.profile_pic} group={!!p.isGroup} />
               <span className='min-w-0 flex-1'>
-                <span className='block truncate text-[15px] text-wa-text'>{p.name}{p.self ? ' (You)' : ''}</span>
-                <span className='block truncate text-xs'>{p.about}</span>
+                <span className='block truncate text-[15px] text-wa-text'>{names.name(p)}{p.self ? ' (You)' : ''}</span>
+                <span className='block truncate text-xs'>{p.isGroup ? 'Group' : p.about}</span>
               </span>
             </button>
           )
@@ -68,7 +70,7 @@ const ForwardDialog = ({ count, onClose, onForward }) => {
       {/* WhatsApp-style footer: selected names + round send button */}
       <div className='-mx-6 -mb-5 mt-4 flex items-center gap-3 bg-wa-panel px-6 py-3'>
         <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>
-          {picked.length ? conversations.map((c) => c.userDetails).filter((p) => p && picked.includes(String(p._id))).map((p) => p.name).join(', ') : <span className='text-wa-muted'>Select up to {MAX_TARGETS} chats</span>}
+          {picked.length ? conversations.map((c) => c.userDetails).filter((p) => p && picked.includes(String(p._id))).map((p) => names.name(p)).join(', ') : <span className='text-wa-muted'>Select up to {MAX_TARGETS} chats</span>}
         </p>
         <button onClick={onClose} className='h-9 rounded-full border border-[#d1d7db] bg-white px-5 text-sm font-medium text-wa-teal hover:bg-wa-hover'>Cancel</button>
         <button

@@ -1,6 +1,7 @@
 import React from 'react'
 import { useSelector } from 'react-redux';
 import DefaultAvatar from './DefaultAvatar';
+import { HiUserGroup } from 'react-icons/hi';
 
 const colors = ['#25d366', '#53bdeb', '#ff8f6b', '#a791ff', '#ffbc38', '#06cf9c', '#fc6d9b', '#7f66ff', '#02a698']
 
@@ -11,12 +12,15 @@ const colorFor = (name = '') => {
   return colors[h % colors.length]
 }
 
-const Avatar = ({ userId, name, imageUrl, width, height }) => {
+const Avatar = ({ userId, name, imageUrl, width, height, group = false }) => {
   const onlineUser = useSelector(state => state?.user?.onlineUser)
 
+  // "~Rahul" (not a saved contact) -> "Rahul"; a phone number has no initials, so it gets the default picture
+  const cleanName = (name || '').replace(/^[~\s]+/, '')
+  const isNumber = /^\+?[\d\s]+$/.test(cleanName)
   let avatarName = ""
-  if (name) {
-    const splitName = name.trim().split(" ").filter(Boolean)
+  if (cleanName && !isNumber) {
+    const splitName = cleanName.trim().split(" ").filter(Boolean)
     avatarName = splitName.length > 1 ? splitName[0][0] + splitName[1][0] : (splitName[0]?.[0] || "")
   }
 
@@ -31,10 +35,14 @@ const Avatar = ({ userId, name, imageUrl, width, height }) => {
           alt={name}
           className='h-full w-full rounded-full object-cover'
         />
-      ) : name ? (
+      ) : group ? (
+        <div className='flex h-full w-full items-center justify-center rounded-full bg-[#dfe5e7] text-white'>
+          <HiUserGroup style={{ width : width * 0.58, height : height * 0.58 }} />
+        </div>
+      ) : avatarName ? (
         <div
           className='flex h-full w-full items-center justify-center rounded-full font-medium uppercase text-white'
-          style={{ backgroundColor: colorFor(name), fontSize: Math.max(12, width * 0.38) + "px" }}
+          style={{ backgroundColor: colorFor(cleanName), fontSize: Math.max(12, width * 0.38) + "px" }}
         >
           {avatarName}
         </div>

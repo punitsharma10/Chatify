@@ -9,6 +9,7 @@ const initialState = {
   about : "",
   privacy : {},
   blocked : [],
+  contacts : [], // [{ userId, name }] people I saved
   token : "",
   onlineUser : [],
   socketConnection : null,
@@ -28,6 +29,10 @@ export const userSlice = createSlice({
         state.about = action.payload.about || ""
         state.privacy = action.payload.privacy || {}
         state.blocked = (action.payload.blocked || []).map(String)
+        if (action.payload.contacts) state.contacts = action.payload.contacts.map((c) => ({ userId : String(c.userId), name : c.name || '' }))
+    },
+    setContacts : (state,action)=>{
+        state.contacts = action.payload
     },
     setBlocked : (state,action)=>{
         state.blocked = action.payload
@@ -44,6 +49,7 @@ export const userSlice = createSlice({
         state.about = ""
         state.privacy = {}
         state.blocked = []
+        state.contacts = []
         state.token = ""
         state.socketConnection = null
         state.connected = false
@@ -61,6 +67,6 @@ export const userSlice = createSlice({
 })
 
 // Action creators are generated for each case reducer function
-export const { setUser, setBlocked, setToken ,logout, setOnlineUser,setSocketConnection, setConnected } = userSlice.actions
+export const { setUser, setBlocked, setContacts, setToken ,logout, setOnlineUser,setSocketConnection, setConnected } = userSlice.actions
 
 export default userSlice.reducer

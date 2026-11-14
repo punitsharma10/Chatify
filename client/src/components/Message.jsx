@@ -4,7 +4,12 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import moment from 'moment'
 import { notify, notifyError, notifyAction } from '../helpers/toast'
 import Avatar from './Avatar'
-import MessageBubble, { ReplyQuote } from './MessageBubble'
+import MessageBubble, { ReplyQuote, SystemNotice } from './MessageBubble'
+import GroupInfo from './GroupInfo'
+import { systemText, nameColor } from '../helpers/groupText'
+import { usePeopleNames } from '../helpers/contacts'
+import { useCalls } from './CallManager'
+import { IoCallOutline, IoVideocamOutline } from 'react-icons/io5'
 import PopoverMenu from './PopoverMenu'
 import EmojiPicker from './EmojiPicker'
 import Dialog from './Dialog'
@@ -20,7 +25,7 @@ import { plainPreview } from '../helpers/formatText'
 import { useWallpaper } from '../helpers/preferences'
 import { setBlocked } from '../redux/userSlice'
 import { HiDotsVertical } from "react-icons/hi";
-import { IoArrowBack, IoClose, IoImages, IoDocumentText, IoCamera, IoSearchOutline, IoChevronDown, IoCopyOutline, IoStarOutline, IoStar, IoTrashOutline, IoInformationCircleOutline, IoDownloadOutline, IoCheckmark, IoTimerOutline, IoAdd, IoNotificationsOutline, IoNotificationsOffOutline } from "react-icons/io5";
+import { IoArrowBack, IoClose, IoImages, IoDocumentText, IoCamera, IoSearchOutline, IoChevronDown, IoCopyOutline, IoStarOutline, IoStar, IoTrashOutline, IoInformationCircleOutline, IoDownloadOutline, IoCheckmark, IoTimerOutline, IoAdd, IoNotificationsOutline, IoNotificationsOffOutline, IoExitOutline } from "react-icons/io5";
 import { FaPlus } from "react-icons/fa6";
 import { IoMdSend } from "react-icons/io";
 import { BsReply, BsPinAngle, BsPinAngleFill, BsCheck2All, BsCheck2 } from "react-icons/bs";
@@ -58,11 +63,15 @@ const Message = () => {
   const me = useSelector((s) => s.user._id)
   const myBlocked = useSelector((s) => s.user.blocked)
   const onlineUser = useSelector((s) => s.user.onlineUser)
-  const isTyping = useSelector((s) => !!s.chat.typing[peerId])
+  const typingValue = useSelector((s) => s.chat.typing[peerId]) // true (1:1) or the typer's name (group)
+  const isTyping = !!typingValue
   const listConv = useSelector((s) => s.chat.conversations.find((c) => String(c.userDetails?._id) === String(peerId)))
   const wallpaper = useWallpaper()
+  const names = usePeopleNames()
+  const { startCall, startGroupCall, joinGroupCall, groupCallStates, refreshGroupCall, inCall } = useCalls()
 
   const [peer, setPeer] = useState(null)
+  const [group, setGroup] = useState(null) // group details when this chat is a group
   const [conversation, setConversation] = useState(null)
   const [messages, setMessages] = useState([])
   const [hasMore, setHasMore] = useState(false)
@@ -109,11 +118,29 @@ const Message = () => {
   messagesRef.current = messages
   hasMoreRef.current = hasMore
 
-  const online = onlineUser.includes(String(peerId))
-  const blocked = myBlocked.includes(String(peerId)) || !!peer?.blockedByMe
+  const isGroupChat = !!group
+  const online = !isGroupChat && onlineUser.includes(String(peerId))
+  const blocked = !isGroupChat && (myBlocked.includes(String(peerId)) || !!peer?.blockedByMe)
+  const isMember = !group || group.isMember
+  const adminsOnlySend = !!group && group.settings?.sendMessages === 'admins' && !group.isAdmin
+  const canSend = !blocked && isMember && !adminsOnlySend
+  const canEditInfo = !group || (group.isMember && (group.settings?.editInfo !== 'admins' || group.isAdmin))
   const muted = listConv ? !!listConv.muted : !!conversation?.muted
   const disappearAfter = conversation?.disappearAfter || 0
-  const authorNameOf = useCallback((id) => (String(id) === String(me) ? 'You' : peer?.name || ''), [me, peer?.name])
+  const people = group?.people
+  const peerName = peer ? (isGroupChat || peer.isGroup ? peer.name : names.name(peer)) : ''
+  const isRequest = !isGroupChat && !!(listConv ? listConv.request : conversation?.request)
+  const authorNameOf = useCallback((id) => {
+    if (String(id) === String(me)) return 'You'
+    if (people) return people[String(id)] ? names.name({ _id : id, ...people[String(id)] }) : 'Former member'
+    return peerName
+  }, [me, peerName, people, names])
+  // group bubbles: "+91 98765 43210 ~Rahul" for people you haven't saved, like WhatsApp
+  const authorLabelOf = useCallback((id) => {
+    const person = people?.[String(id)]
+    const hint = person ? names.hint({ _id : id, ...person }) : ''
+    return hint ? `${authorNameOf(id)}  ${hint}` : authorNameOf(id)
+  }, [people, names, authorNameOf])
 
   /* ---------------- scrolling ---------------- */
 
@@ -201,6 +228,7 @@ const Message = () => {
     setLoading(true)
     setMessages([])
     setPeer(null)
+    setGroup(null)
     setConversation(null)
     setPinned([])
     setReplyTo(null)
@@ -223,6 +251,8 @@ const Message = () => {
         return
       }
       setPeer(res.peer)
+      setGroup(res.group || null)
+      if (res.group?.isMember) refreshGroupCall(res.group._id)
       setConversation(res.conversation)
       setPinned(res.pinned || [])
       setHasMore(res.hasMore)
@@ -305,9 +335,10 @@ const Message = () => {
         : m)))
     }
 
-    const onConvUpdated = ({ peerId : pid, disappearAfter : value, by }) => {
+    const onConvUpdated = ({ peerId : pid, disappearAfter : value, by, byName }) => {
       if (String(pid) !== String(peerId)) return
       setConversation((c) => ({ ...(c || {}), disappearAfter : value }))
+      if (byName) return // groups show a notice in the chat instead
       const label = DISAPPEAR_OPTIONS.find((o) => o.value === value)?.label
       const who = String(by) === String(me) ? 'You' : 'They'
       notify(value ? `${who} turned on disappearing messages. New messages will disappear after ${label}.` : `${who} turned off disappearing messages.`)
@@ -321,6 +352,13 @@ const Message = () => {
       if (deleted) navigate('/')
     }
 
+    // group name / icon / members / roles changed (or I was added / removed)
+    const onGroupUpdated = ({ groupId, group : g }) => {
+      if (String(groupId) !== String(peerId)) return
+      setGroup(g)
+      setPeer((p) => ({ ...(p || {}), _id : g._id, name : g.name, profile_pic : g.avatar, about : g.description, isGroup : true }))
+    }
+
     const onVisible = () => { if (document.visibilityState === 'visible') markSeen() }
 
     socket.on('connect', onConnect)
@@ -330,6 +368,7 @@ const Message = () => {
     socket.on('messages-status', onStatus)
     socket.on('conversation-updated', onConvUpdated)
     socket.on('chat-cleared', onCleared)
+    socket.on('group-updated', onGroupUpdated)
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
@@ -341,6 +380,7 @@ const Message = () => {
       socket.off('messages-status', onStatus)
       socket.off('conversation-updated', onConvUpdated)
       socket.off('chat-cleared', onCleared)
+      socket.off('group-updated', onGroupUpdated)
       document.removeEventListener('visibilitychange', onVisible)
       if (typingRef.current.sent) socket.emit('typing', { to : peerId, isTyping : false })
       typingRef.current = { sent : false, timer : null }
@@ -394,7 +434,7 @@ const Message = () => {
 
   const onType = (value) => {
     setText(value)
-    if (!socket || peer?.self || blocked) return
+    if (!socket || peer?.self || !canSend) return
     if (!typingRef.current.sent && value) {
       socket.emit('typing', { to : peerId, isTyping : true })
       typingRef.current.sent = true
@@ -550,8 +590,9 @@ const Message = () => {
   const askDelete = (ids) => {
     const list = ids.map(messageById).filter(Boolean)
     const now = Date.now()
-    const canEveryone = list.length > 0 && list.every((m) =>
-      String(m.msgByUserId) === String(me) && !m.status && !m.deletedForEveryone && now - new Date(m.createdAt).getTime() < DELETE_EVERYONE_WINDOW_MS)
+    // group admins can delete anyone's message for everyone (like WhatsApp)
+    const canEveryone = list.length > 0 && isMember && list.every((m) =>
+      (String(m.msgByUserId) === String(me) || !!group?.isAdmin) && !m.system && !m.status && !m.deletedForEveryone && now - new Date(m.createdAt).getTime() < DELETE_EVERYONE_WINDOW_MS)
     setDialog({
       type : 'delete',
       title : list.length > 1 ? `Delete ${list.length} messages?` : 'Delete message?',
@@ -602,7 +643,7 @@ const Message = () => {
   const exitSelect = () => { setSelectMode(false); setSelected([]) }
 
   const toggleSelect = useCallback((msg) => {
-    if (msg.status) return
+    if (msg.status || msg.system) return
     setSelected((prev) => (prev.includes(String(msg._id)) ? prev.filter((x) => x !== String(msg._id)) : [...prev, String(msg._id)]))
   }, [])
 
@@ -616,14 +657,14 @@ const Message = () => {
     const canEdit = mine && !local && !deleted && !msg.forwarded && Date.now() - new Date(msg.createdAt).getTime() < EDIT_WINDOW_MS
     const mediaUrl = msg.imageUrl || msg.videoUrl || msg.fileUrl
     return [
-      { label : 'Reply', icon : <BsReply size={18} />, hidden : local || deleted || blocked, onClick : () => { setEditing(null); setReplyTo(msg); inputRef.current?.focus() } },
+      { label : 'Reply', icon : <BsReply size={18} />, hidden : local || deleted || !canSend, onClick : () => { setEditing(null); setReplyTo(msg); inputRef.current?.focus() } },
       { label : 'Copy', icon : <IoCopyOutline size={17} />, hidden : !msg.text || deleted, onClick : () => copyMessages([String(msg._id)]) },
-      { label : 'Edit', icon : <MdEdit size={17} />, hidden : !canEdit, onClick : () => { setReplyTo(null); setEditing(msg); setText(msg.text || ''); inputRef.current?.focus() } },
-      { label : 'Forward', icon : <RiShareForwardLine size={18} />, hidden : local || deleted, onClick : () => setForwardIds([String(msg._id)]) },
-      { label : msg.pinned ? 'Unpin' : 'Pin', icon : <BsPinAngle size={16} />, hidden : local || deleted, onClick : () => pinMessage(msg, !msg.pinned) },
+      { label : 'Edit', icon : <MdEdit size={17} />, hidden : !canEdit || !isMember || !!msg.call, onClick : () => { setReplyTo(null); setEditing(msg); setText(msg.text || ''); inputRef.current?.focus() } },
+      { label : 'Forward', icon : <RiShareForwardLine size={18} />, hidden : local || deleted || !!msg.call, onClick : () => setForwardIds([String(msg._id)]) },
+      { label : msg.pinned ? 'Unpin' : 'Pin', icon : <BsPinAngle size={16} />, hidden : local || deleted || !canEditInfo, onClick : () => pinMessage(msg, !msg.pinned) },
       { label : msg.starred ? 'Unstar' : 'Star', icon : msg.starred ? <IoStar size={17} /> : <IoStarOutline size={17} />, hidden : local || deleted, onClick : () => starMessages([String(msg._id)], !msg.starred) },
       { label : 'Download', icon : <IoDownloadOutline size={18} />, hidden : !mediaUrl || deleted || local, onClick : () => downloadMedia(mediaUrl, msg.fileName || undefined) },
-      { label : 'Message info', icon : <IoInformationCircleOutline size={19} />, hidden : !mine || local || deleted, onClick : () => showInfo(msg) },
+      { label : 'Message info', icon : <IoInformationCircleOutline size={19} />, hidden : !mine || local || deleted || !!msg.call, onClick : () => showInfo(msg) },
       { label : 'Select', icon : <MdOutlineChecklist size={18} />, hidden : local, onClick : () => { setSelectMode(true); setSelected([String(msg._id)]) } },
       { label : 'Delete', icon : <IoTrashOutline size={18} />, danger : true, onClick : () => askDelete([String(msg._id)]) },
     ]
@@ -639,8 +680,30 @@ const Message = () => {
     if (action === 'clear') notify('Chat cleared')
   }
 
+  const exitGroup = () => setDialog({
+    type : 'confirm', title : `Exit "${peerName}"?`,
+    body : 'You will no longer receive messages from this group. Group members will see that you left.',
+    actions : [{ label : 'Cancel', onClick : () => setDialog(null) }, {
+      label : 'Exit group', danger : true, onClick : async () => {
+        setDialog(null)
+        const res = await socketCall(socket, 'group-leave', { groupId : peerId })
+        if (!res.ok) notifyError(res.error)
+      }
+    }]
+  })
+
   const confirmChatAction = (action) => {
-    const name = peer?.name
+    const name = peerName
+    if (isGroupChat) {
+      const copy = action === 'clear'
+        ? { title : 'Clear this chat?', body : 'Messages in this group will be removed for you only.', label : 'Clear chat' }
+        : { title : `Delete "${name}"?`, body : 'The group and its messages will be removed from your chat list.', label : 'Delete group' }
+      setDialog({
+        type : 'confirm', title : copy.title, body : copy.body,
+        actions : [{ label : 'Cancel', onClick : () => setDialog(null) }, { label : copy.label, danger : true, onClick : () => { setDialog(null); chatAction(action) } }]
+      })
+      return
+    }
     const copy = action === 'clear'
       ? { title : 'Clear this chat?', body : `Messages will be removed for you only. ${name} keeps their copy.`, label : 'Clear chat' }
       : { title : `Delete chat with ${name}?`, body : `The chat will be removed from your list. ${name} keeps their copy.`, label : 'Delete chat' }
@@ -648,6 +711,13 @@ const Message = () => {
       type : 'confirm', title : copy.title, body : copy.body,
       actions : [{ label : 'Cancel', onClick : () => setDialog(null) }, { label : copy.label, danger : true, onClick : () => { setDialog(null); chatAction(action) } }]
     })
+  }
+
+  const acceptRequest = async () => {
+    const res = await socketCall(socket, 'chat-action', { peerId, action : 'accept' })
+    if (!res.ok) return notifyError(res.error)
+    setConversation((c) => ({ ...(c || {}), request : false }))
+    notify('Request accepted')
   }
 
   const setDisappearing = async (seconds) => {
@@ -663,17 +733,26 @@ const Message = () => {
       if (!res.ok) return notifyError(res.error)
       dispatch(setBlocked(res.blocked))
       setPeer((p) => ({ ...p, blockedByMe : block }))
-      notify(block ? `${peer?.name} blocked` : `${peer?.name} unblocked`)
+      notify(block ? `${peerName} blocked` : `${peerName} unblocked`)
     }
     if (!block) return run()
     setDialog({
-      type : 'confirm', title : `Block ${peer?.name}?`,
+      type : 'confirm', title : `Block ${peerName}?`,
       body : "Blocked contacts can't see your online status or last seen, and their messages won't be delivered to you. They won't be notified.",
       actions : [{ label : 'Cancel', onClick : () => setDialog(null) }, { label : 'Block', danger : true, onClick : run }]
     })
   }
 
-  const headerItems = [
+  const headerItems = isGroupChat ? [
+    { label : 'Group info', icon : <IoInformationCircleOutline size={19} />, onClick : () => setPanel('info') },
+    { label : 'Search', icon : <IoSearchOutline size={18} />, onClick : () => setPanel('search') },
+    { label : 'Select messages', icon : <MdOutlineChecklist size={18} />, hidden : !messages.length, onClick : () => setSelectMode(true) },
+    { label : muted ? 'Unmute notifications' : 'Mute notifications', icon : muted ? <IoNotificationsOutline size={18} /> : <IoNotificationsOffOutline size={18} />, hidden : !listConv, onClick : () => chatAction(muted ? 'unmute' : 'mute') },
+    { label : 'Disappearing messages', icon : <IoTimerOutline size={18} />, hidden : !canEditInfo, onClick : () => setPanel('info') },
+    { label : 'Clear chat', icon : <MdOutlineCleaningServices size={18} />, hidden : !messages.length, onClick : () => confirmChatAction('clear') },
+    { label : 'Exit group', icon : <IoExitOutline size={18} />, danger : true, hidden : !isMember, onClick : exitGroup },
+    { label : 'Delete group', icon : <IoTrashOutline size={18} />, danger : true, hidden : isMember, onClick : () => confirmChatAction('delete') },
+  ] : [
     { label : 'Contact info', icon : <IoInformationCircleOutline size={19} />, onClick : () => setPanel('info') },
     { label : 'Search', icon : <IoSearchOutline size={18} />, onClick : () => setPanel('search') },
     { label : 'Select messages', icon : <MdOutlineChecklist size={18} />, hidden : !messages.length, onClick : () => setSelectMode(true) },
@@ -686,7 +765,14 @@ const Message = () => {
 
   /* ---------------- render helpers ---------------- */
 
-  const status = isTyping ? 'typing…'
+  // group header: "Alice, Bob, You" like WhatsApp
+  const memberLine = group ? [
+    ...(group.members || []).filter((m) => String(m._id) !== String(me)).map((m) => m.name),
+    ...(group.isMember ? ['You'] : [])
+  ].join(', ') : ''
+
+  const status = isTyping ? (typeof typingValue === 'string' ? `${typingValue} is typing…` : 'typing…')
+    : isGroupChat ? (memberLine || 'click here for group info')
     : peer?.self ? 'Message yourself'
       : online ? 'online'
         : peer?.lastSeen ? formatLastSeen(peer.lastSeen)
@@ -703,15 +789,15 @@ const Message = () => {
     const prev = messages[index - 1]
     const mine = String(msg.msgByUserId) === String(me)
     const newDay = !prev || !moment(prev.createdAt).isSame(msg.createdAt, 'day')
-    const firstOfGroup = newDay || !prev || String(prev.msgByUserId) !== String(msg.msgByUserId)
-    return { msg, mine, newDay, firstOfGroup }
+    const firstOfGroup = newDay || !prev || !!prev.system || String(prev.msgByUserId) !== String(msg.msgByUserId)
+    return { msg, mine : mine && !msg.system, newDay, firstOfGroup }
   }), [messages, me])
 
   return (
     <div className='relative flex h-full'>
       <div
         className='relative flex min-w-0 flex-1 flex-col'
-        onDragEnter={(e) => { if (!blocked && e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setDragOver(true) } }}
+        onDragEnter={(e) => { if (canSend && e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); setDragOver(true) } }}
         onDragOver={(e) => { if (dragOver) e.preventDefault() }}
       >
         {/* header / selection bar */}
@@ -736,16 +822,39 @@ const Message = () => {
               </Link>
               <button onClick={() => setPanel('info')} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
                 {peer ? (
-                  <Avatar width={40} height={40} imageUrl={peer.profile_pic} name={peer.name} userId={peer._id} />
+                  <Avatar width={40} height={40} imageUrl={peer.profile_pic} name={peerName} userId={isGroupChat || peer.isGroup ? undefined : peer._id} group={isGroupChat || !!peer.isGroup} />
                 ) : <span className='h-10 w-10 shrink-0 animate-pulse rounded-full bg-[#dfe5e7]' />}
                 <span className='min-w-0'>
-                  <span className='block truncate text-base leading-5 text-wa-text'>{peer ? `${peer.name}${peer.self ? ' (You)' : ''}` : ' '}</span>
+                  <span className='block truncate text-base leading-5 text-wa-text'>{peer ? `${peerName}${peer.self ? ' (You)' : ''}` : ' '}</span>
                   <span className={`block truncate text-[13px] leading-5 ${isTyping ? 'text-wa-green' : 'text-wa-muted'}`}>{peer ? status : ' '}</span>
                 </span>
               </button>
             </div>
             <div className='flex items-center gap-1'>
               {disappearAfter > 0 && <IoTimerOutline size={18} className='mr-1 text-[#54656f]' title='Disappearing messages on' />}
+              {isGroupChat && isMember && (() => {
+                const running = groupCallStates[String(peerId)]
+                const groupInfo = { _id : group._id, name : group.name, avatar : group.avatar }
+                if (running && !inCall) {
+                  return (
+                    <button onClick={() => joinGroupCall(groupInfo, running)} className='mr-1 flex h-9 items-center gap-1.5 rounded-full bg-wa-green px-4 text-sm font-medium text-white hover:bg-wa-greenDark' title='Join call'>
+                      {running.type === 'video' ? <IoVideocamOutline size={18} /> : <IoCallOutline size={16} />} Join · {running.participants.length}
+                    </button>
+                  )
+                }
+                return (
+                  <>
+                    <button className='wa-icon-btn' title='Group video call' onClick={() => startGroupCall(groupInfo, 'video')}><IoVideocamOutline size={22} /></button>
+                    <button className='wa-icon-btn' title='Group voice call' onClick={() => startGroupCall(groupInfo, 'audio')}><IoCallOutline size={20} /></button>
+                  </>
+                )
+              })()}
+              {peer && !isGroupChat && !peer.isGroup && !peer.self && !blocked && (
+                <>
+                  <button className='wa-icon-btn' title='Video call' onClick={() => startCall({ ...peer, name : peerName }, 'video')}><IoVideocamOutline size={22} /></button>
+                  <button className='wa-icon-btn' title='Voice call' onClick={() => startCall({ ...peer, name : peerName }, 'audio')}><IoCallOutline size={20} /></button>
+                </>
+              )}
               <button className='wa-icon-btn hidden sm:flex' title='Search' onClick={() => setPanel('search')}><IoSearchOutline size={20} /></button>
               <button className='wa-icon-btn' title='Menu' onClick={(e) => setHeaderMenu(e.currentTarget.getBoundingClientRect())}>
                 <HiDotsVertical size={20} />
@@ -785,7 +894,7 @@ const Message = () => {
 
             {!loading && messages.length === 0 && (
               <div className='mx-auto mt-4 max-w-sm rounded-lg bg-[#ffeecd] px-4 py-2 text-center text-[12.5px] text-[#54656f] shadow-bubble'>
-                No messages yet. Say hi to {peer?.name || 'your friend'}! 👋
+                No messages yet. Say hi to {peerName || 'your friend'}! 👋
               </div>
             )}
 
@@ -803,6 +912,7 @@ const Message = () => {
                     </span>
                   </div>
                 )}
+                {msg.system ? <div className='mt-2'><SystemNotice text={systemText(msg, me)} /></div> : (
                 <div className={firstOfGroup ? 'mt-3' : 'mt-0.5'}>
                   <MessageBubble
                     msg={msg}
@@ -820,8 +930,14 @@ const Message = () => {
                     onRetry={retry}
                     onToggleReaction={toggleReaction}
                     onQuickReact={openQuickReact}
+                    onCallBack={isGroupChat
+                      ? (isMember ? (type) => startGroupCall({ _id : group._id, name : group.name, avatar : group.avatar }, type) : undefined)
+                      : !blocked && peer && !peer.self ? (type) => startCall({ ...peer, name : peerName }, type) : undefined}
+                    authorLabel={isGroupChat && !mine && firstOfGroup ? authorLabelOf(msg.msgByUserId) : undefined}
+                    authorColor={nameColor(msg.msgByUserId)}
                   />
                 </div>
+                )}
               </React.Fragment>
             ))}
           </div>
@@ -842,7 +958,7 @@ const Message = () => {
         )}
 
         {/* reply / edit bar */}
-        {(replyTo || editing) && !blocked && (
+        {(replyTo || editing) && canSend && (
           <div className='flex shrink-0 items-center gap-2 bg-wa-panel px-3 pt-2 sm:px-4'>
             <div className='min-w-0 flex-1 rounded-lg bg-white/60 p-1'>
               {replyTo ? (
@@ -862,10 +978,25 @@ const Message = () => {
         )}
 
         {/* composer */}
-        {blocked ? (
+        {isRequest && !blocked ? (
+          <footer className='shrink-0 bg-wa-panel px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-center'>
+            <p className='text-sm text-wa-text'><b className='font-medium'>{peerName}</b> is not in your contacts.</p>
+            <p className='mt-0.5 text-xs text-wa-muted'>They won't see that you read their messages until you accept.</p>
+            <div className='mt-3 flex flex-wrap justify-center gap-2'>
+              <button onClick={toggleBlock} className='h-9 rounded-full border border-[#d1d7db] bg-white px-5 text-sm font-medium text-red-600 hover:bg-wa-hover'>Block</button>
+              <button onClick={() => setPanel('info')} className='h-9 rounded-full border border-[#d1d7db] bg-white px-5 text-sm font-medium text-wa-teal hover:bg-wa-hover'>Add to contacts</button>
+              <button onClick={acceptRequest} className='h-9 rounded-full bg-wa-teal px-6 text-sm font-medium text-white hover:bg-[#017561]'>Accept</button>
+            </div>
+          </footer>
+        ) : !canSend ? (
           <footer className='flex min-h-[62px] shrink-0 items-center justify-center gap-2 bg-wa-panel px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-center text-sm text-wa-muted'>
-            You blocked this contact.
-            <button onClick={toggleBlock} className='font-medium text-wa-green hover:underline'>Unblock</button>
+            {blocked ? (
+              <>
+                You blocked this contact.
+                <button onClick={toggleBlock} className='font-medium text-wa-green hover:underline'>Unblock</button>
+              </>
+            ) : !isMember ? "You can't send messages to this group because you're no longer a member."
+              : <span>Only <button onClick={() => setPanel('info')} className='font-medium text-wa-green hover:underline'>admins</button> can send messages.</span>}
           </footer>
         ) : (
           <footer className='relative flex min-h-[62px] shrink-0 items-end gap-1 bg-wa-panel px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:gap-2 sm:px-4'>
@@ -956,7 +1087,7 @@ const Message = () => {
             onAddMore={() => imageInput.current?.click()}
             onClose={() => { composer.forEach((c) => c.url && URL.revokeObjectURL(c.url)); setComposer(null) }}
             onSend={sendComposer}
-            peerName={peer?.name}
+            peerName={peerName}
           />
         )}
       </div>
@@ -964,7 +1095,22 @@ const Message = () => {
       {/* side panel: contact info / search */}
       {panel && peer && (
         <aside className='absolute inset-0 z-30 border-l border-wa-border xl:static xl:z-auto xl:w-[380px] xl:shrink-0 2xl:w-[420px]'>
-          {panel === 'info' ? (
+          {panel === 'info' && group ? (
+            <GroupInfo
+              socket={socket}
+              group={group}
+              conversation={listConv ? { ...conversation, muted, disappearAfter } : conversation}
+              onClose={() => setPanel(null)}
+              onOpenMedia={(m, list) => openMedia(m, list)}
+              onJump={jumpTo}
+              onToggleMute={(v) => chatAction(v ? 'mute' : 'unmute')}
+              onSetDisappearing={setDisappearing}
+              onClear={() => confirmChatAction('clear')}
+              onExit={exitGroup}
+              onDelete={() => confirmChatAction('delete')}
+              onMessageMember={(id) => navigate('/' + id)}
+            />
+          ) : panel === 'info' ? (
             <ContactInfo
               socket={socket}
               peer={peer}
@@ -983,7 +1129,7 @@ const Message = () => {
             <ChatSearch
               socket={socket}
               peerId={peerId}
-              peerName={peer.name}
+              peerName={peerName}
               myId={me}
               onClose={() => { setPanel(null); setSearchTerm('') }}
               onTermChange={setSearchTerm}
@@ -1000,7 +1146,7 @@ const Message = () => {
           align={String(menu.msg.msgByUserId) === String(me) ? 'right' : 'left'}
           items={menuItems(menu.msg)}
           onClose={() => setMenu(null)}
-          header={!menu.msg.status && !menu.msg.deletedForEveryone && !blocked ? (
+          header={!menu.msg.status && !menu.msg.deletedForEveryone && !blocked && isMember ? (
             <div className='mb-1 flex items-center justify-around border-b border-wa-border px-3 pb-2'>
               {QUICK_REACTIONS.map((e) => (
                 <button key={e} onClick={() => { toggleReaction(menu.msg, e); setMenu(null) }} className='flex h-9 w-9 items-center justify-center rounded-full text-[22px] transition-transform hover:scale-125 hover:bg-wa-panel'>{e}</button>
@@ -1030,7 +1176,20 @@ const Message = () => {
 
       {dialog?.type === 'delete' && <Dialog title={dialog.title} onClose={() => setDialog(null)} actions={dialog.actions} />}
       {dialog?.type === 'confirm' && <Dialog title={dialog.title} onClose={() => setDialog(null)} actions={dialog.actions}>{dialog.body}</Dialog>}
-      {dialog?.type === 'info' && (
+      {dialog?.type === 'info' && dialog.info.group && (
+        <Dialog title='Message info' onClose={() => setDialog(null)} actions={[{ label : 'Close', onClick : () => setDialog(null) }]}>
+          <div className='mb-4 rounded-lg bg-wa-chat p-3'>
+            <p className='line-clamp-3 text-sm text-wa-text'>{dialog.msg.text || (dialog.msg.imageUrl ? '📷 Photo' : dialog.msg.videoUrl ? '🎥 Video' : `📄 ${dialog.msg.fileName}`)}</p>
+          </div>
+          <div className='max-h-[50dvh] overflow-y-auto scrollbar'>
+            <ReceiptList icon={<BsCheck2All size={18} className='text-wa-tick' />} title='Read by' people={dialog.info.readBy} nameOf={names.name} />
+            <ReceiptList icon={<BsCheck2All size={18} className='text-[#8696a0]' />} title='Delivered to' people={dialog.info.deliveredTo} nameOf={names.name} />
+            {dialog.info.remaining > 0 && <p className='py-2 text-sm text-wa-muted'>{dialog.info.remaining} remaining</p>}
+            <InfoRow icon={<BsCheck2 size={18} className='text-[#8696a0]' />} label='Sent' value={formatFullDate(dialog.info.sentAt)} />
+          </div>
+        </Dialog>
+      )}
+      {dialog?.type === 'info' && !dialog.info.group && (
         <Dialog title='Message info' onClose={() => setDialog(null)} actions={[{ label : 'Close', onClick : () => setDialog(null) }]}>
           <div className='mb-4 rounded-lg bg-wa-chat p-3'>
             <p className='line-clamp-3 text-sm text-wa-text'>{dialog.msg.text || (dialog.msg.imageUrl ? '📷 Photo' : dialog.msg.videoUrl ? '🎥 Video' : `📄 ${dialog.msg.fileName}`)}</p>
@@ -1074,6 +1233,21 @@ const AutoTextarea = ({ inputRef, value, onChange, onKeyDown, onPaste, placehold
     />
   )
 }
+
+// "Read by" / "Delivered to" in a group's message info
+const ReceiptList = ({ icon, title, people, nameOf }) => (
+  <div className='border-b border-wa-border py-3'>
+    <p className='mb-1 flex items-center gap-2 text-[15px] text-wa-text'>{icon} {title}</p>
+    {people.length === 0 && <p className='pl-7 text-sm text-wa-muted'>—</p>}
+    {people.map((p) => (
+      <div key={p._id} className='flex items-center gap-3 py-1.5 pl-7'>
+        <Avatar width={32} height={32} name={nameOf(p)} imageUrl={p.profile_pic} />
+        <span className='min-w-0 flex-1 truncate text-sm text-wa-text'>{nameOf(p)}</span>
+        <span className='shrink-0 text-xs text-wa-muted'>{formatFullDate(p.at)}</span>
+      </div>
+    ))}
+  </div>
+)
 
 const InfoRow = ({ icon, label, value }) => (
   <div className='flex items-start gap-3 border-b border-wa-border py-3 last:border-0'>

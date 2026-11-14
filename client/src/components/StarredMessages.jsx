@@ -9,6 +9,7 @@ import { socketCall } from '../helpers/socketCall'
 import { formatListTime } from '../helpers/formatTime'
 import { renderFormatted } from '../helpers/formatText'
 import { thumbUrl, videoPoster } from '../helpers/media'
+import { usePeopleNames } from '../helpers/contacts'
 
 // all starred messages across chats
 const StarredMessages = ({ onClose }) => {
@@ -16,6 +17,7 @@ const StarredMessages = ({ onClose }) => {
   const me = useSelector((s) => s.user._id)
   const [items, setItems] = useState(null)
   const navigate = useNavigate()
+  const names = usePeopleNames()
 
   useEffect(() => {
     socketCall(socket, 'get-starred').then((res) => setItems(res.ok ? res.messages : []))
@@ -36,13 +38,14 @@ const StarredMessages = ({ onClose }) => {
         </div>
       )}
       {items && items.map((item) => {
-        const { message, peer } = item
+        const { message, peer, authorName, author } = item
+        const peerName = names.name(peer)
         const mine = String(message.msgByUserId) === String(me)
         return (
           <button key={message._id} onClick={() => open(item)} className='block w-full border-b border-wa-border bg-white px-4 py-3 text-left hover:bg-wa-hover'>
             <div className='flex items-center gap-2'>
-              <Avatar width={26} height={26} name={peer?.name} imageUrl={peer?.profile_pic} />
-              <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>{mine ? `You ▸ ${peer?.name}` : `${peer?.name} ▸ You`}</p>
+              <Avatar width={26} height={26} name={peer?.name} imageUrl={peer?.profile_pic} group={!!peer?.isGroup} />
+              <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>{peer?.isGroup ? `${mine ? 'You' : author ? names.name(author) : authorName} ▸ ${peerName}` : mine ? `You ▸ ${peerName}` : `${peerName} ▸ You`}</p>
               <span className='shrink-0 text-xs text-wa-muted'>{formatListTime(message.createdAt)}</span>
             </div>
             <div className='mt-2 flex items-start gap-2 pl-8'>

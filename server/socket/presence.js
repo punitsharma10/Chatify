@@ -3,9 +3,11 @@
 // so closing one tab no longer marks them offline. Socket.IO's heartbeat (pingInterval/pingTimeout)
 // removes dead connections, which keeps this list from going stale when a network drops.
 
-const entries = new Map() // userId -> { count, showOnline, blocked:Set<string> }
+const entries = new Map() // userId -> { count, mode:'everyone'|'contacts'|'nobody', contacts:Set<string>, blocked:Set<string> }
 
 const toSet = (list) => new Set((list || []).map(String))
+const contactSet = (user) => new Set((user?.contacts || []).map((c) => String(c.userId)))
+const modeOf = (user) => user?.privacy?.online || 'everyone'
 
 const add = (user) => {
     const id = String(user._id)
@@ -16,7 +18,8 @@ const add = (user) => {
     }
     entries.set(id, {
         count : 1,
-        showOnline : user?.privacy?.online !== 'nobody',
+        mode : modeOf(user),
+        contacts : contactSet(user),
         blocked : toSet(user.blocked)
     })
     return true
@@ -39,7 +42,8 @@ const remove = (userId) => {
 const update = (user) => {
     const entry = entries.get(String(user._id))
     if (!entry) return
-    entry.showOnline = user?.privacy?.online !== 'nobody'
+    entry.mode = modeOf(user)
+    entry.contacts = contactSet(user)
     entry.blocked = toSet(user.blocked)
 }
 
@@ -50,7 +54,8 @@ const isVisiblyOnline = (userId, viewerId) => {
     const entry = entries.get(String(userId))
     if (!entry) return false
     if (String(userId) === String(viewerId)) return true
-    if (!entry.showOnline) return false
+    if (entry.mode === 'nobody') return false
+    if (entry.mode === 'contacts' && !entry.contacts.has(String(viewerId))) return false
     if (entry.blocked.has(String(viewerId))) return false
     const viewer = entries.get(String(viewerId))
     if (viewer && viewer.blocked.has(String(userId))) return false

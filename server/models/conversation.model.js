@@ -7,6 +7,11 @@ const reactionSchema = new mongoose.Schema({
     emoji : { type : String, required : true }
 },{ _id : false })
 
+const receiptSchema = new mongoose.Schema({
+    userId : { type : ObjectId, ref : 'User', required : true },
+    at : { type : Date, required : true }
+},{ _id : false })
+
 const messageSchema = new mongoose.Schema({
     conversationId : {
         type : ObjectId,
@@ -65,7 +70,30 @@ const messageSchema = new mongoose.Schema({
     pinnedBy : { type : ObjectId, ref : 'User' },
 
     // disappearing messages: MongoDB removes the document after this date (TTL index)
-    expiresAt : { type : Date }
+    expiresAt : { type : Date },
+
+    // ----- group chats -----
+    // members who should receive this message (snapshot at send time); used for group ticks
+    // (default undefined keeps one-to-one messages free of empty arrays)
+    recipients : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    deliveredTo : { type : [receiptSchema], default : undefined },
+    readBy : { type : [receiptSchema], default : undefined },
+    // call history entry ("Missed voice call", "Video call 2:31"); msgByUserId = the caller
+    call : {
+        media : { type : String, enum : ['audio', 'video'] }, // ("type" is reserved by mongoose)
+        status : { type : String, enum : ['answered', 'missed', 'declined'] },
+        duration : { type : Number }, // seconds, for answered calls
+        participants : { type : Number } // group calls: how many people joined
+    },
+    // an admin deleted someone else's message for everyone
+    deletedByAdmin : { type : Boolean, default : false },
+    // grey notice in the chat, e.g. "Alice added Bob". Names are a snapshot so they survive members leaving.
+    system : {
+        action : { type : String },
+        actor : { id : String, name : String },
+        targets : { type : [{ id : String, name : String, _id : false }], default : undefined },
+        value : { type : String }
+    }
 },{
     timestamps : true
 })
@@ -77,6 +105,7 @@ messageSchema.index(
 )
 messageSchema.index({ expiresAt : 1 }, { expireAfterSeconds : 0 })
 messageSchema.index({ starredBy : 1 })
+messageSchema.index({ recipients : 1, createdAt : -1 }, { partialFilterExpression : { 'recipients.0' : { $exists : true } } })
 
 // per-user settings for a conversation (archive, pin, mute, clear, delete-for-me)
 const userStateSchema = new mongoose.Schema({
@@ -92,17 +121,53 @@ const userStateSchema = new mongoose.Schema({
     hiddenAt : { type : Date }
 },{ _id : false })
 
+const memberSchema = new mongoose.Schema({
+    userId : { type : ObjectId, ref : 'User', required : true },
+    role : { type : String, enum : ['admin', 'member'], default : 'member' },
+    joinedAt : { type : Date, required : true },
+    addedBy : { type : ObjectId, ref : 'User' }
+},{ _id : false })
+
+// someone who left or was removed: they keep read-only access to messages from their membership period
+const pastMemberSchema = new mongoose.Schema({
+    userId : { type : ObjectId, ref : 'User', required : true },
+    joinedAt : { type : Date, required : true },
+    leftAt : { type : Date, required : true },
+    removed : { type : Boolean, default : false }
+},{ _id : false })
+
+const permission = { type : String, enum : ['all', 'admins'] }
+
 const conversationSchema = new mongoose.Schema({
+    // one-to-one chats: the two people. Groups don't use these.
     sender : {
         type : ObjectId,
-        required : true,
+        required : function () { return !this.isGroup },
         ref : 'User'
     },
     receiver : {
         type : ObjectId,
-        required : true,
+        required : function () { return !this.isGroup },
         ref : 'User'
     },
+
+    // ----- group chats -----
+    // 1:1 chat started by someone who isn't in this user's contacts: shown under "Message requests" until accepted
+    requestFor : { type : ObjectId, ref : 'User' },
+
+    isGroup : { type : Boolean, default : false },
+    name : { type : String, trim : true, maxlength : 100 },
+    description : { type : String, default : '', maxlength : 512 },
+    avatar : { type : String, default : '' },
+    createdBy : { type : ObjectId, ref : 'User' },
+    members : [memberSchema],
+    pastMembers : [pastMemberSchema],
+    settings : {
+        editInfo : { ...permission, default : 'all' },      // name, icon, description, disappearing, pins
+        sendMessages : { ...permission, default : 'all' },
+        addMembers : { ...permission, default : 'admins' }
+    },
+
     messages : [
         {
             type : ObjectId,
@@ -119,6 +184,8 @@ const conversationSchema = new mongoose.Schema({
 
 conversationSchema.index({ sender : 1, receiver : 1 })
 conversationSchema.index({ receiver : 1 })
+conversationSchema.index({ 'members.userId' : 1 })
+conversationSchema.index({ 'pastMembers.userId' : 1 })
 
 const MessageModel = mongoose.model('Message',messageSchema)
 const ConversationModel = mongoose.model('Conversation',conversationSchema)

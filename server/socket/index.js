@@ -6,6 +6,7 @@ const UserModel = require('../models/user.model')
 const presence = require('./presence')
 const { corsOrigin } = require('../helpers/allowedOrigins')
 const registerChatHandlers = require('./chatHandlers')
+const registerCallHandlers = require('./callHandlers')
 
 const app = express()
 
@@ -59,6 +60,7 @@ io.on('connection',(socket)=>{
     }
 
     registerChatHandlers(io, socket, { broadcastOnline })
+    registerCallHandlers(io, socket)
 
     //disconnect
     socket.on('disconnect',async()=>{

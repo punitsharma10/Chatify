@@ -2,6 +2,8 @@ import React, { useRef } from 'react'
 import { BsCheck2, BsCheck2All, BsClock, BsPinAngleFill } from 'react-icons/bs'
 import { IoAlertCircle, IoChevronDown, IoPlay, IoDownloadOutline, IoStar, IoBan } from 'react-icons/io5'
 import { RiShareForwardFill } from 'react-icons/ri'
+import { MdCallMade, MdCallReceived, MdCallMissed } from 'react-icons/md'
+import { IoCall, IoVideocam } from 'react-icons/io5'
 import { MdOutlineEmojiEmotions } from 'react-icons/md'
 import { formatBubbleTime } from '../helpers/formatTime'
 import { renderFormatted, plainPreview } from '../helpers/formatText'
@@ -52,9 +54,17 @@ export const ReplyQuote = ({ reply, mine, authorName, onClick, compact = false }
   )
 }
 
+// grey centred notice in group chats ("Alice added Bob")
+export const SystemNotice = ({ text }) => (
+  <div className='my-1 flex justify-center px-2'>
+    <span className='max-w-[90%] rounded-lg bg-white/95 px-3 py-1.5 text-center text-[12.5px] leading-[17px] text-[#54656f] shadow-bubble'>{text}</span>
+  </div>
+)
+
 const MessageBubble = ({
   msg, mine, firstOfGroup, authorNameOf, selectMode, selected, highlighted, searchTerm,
-  onToggleSelect, onOpenMenu, onOpenMedia, onJumpTo, onRetry, onToggleReaction, onQuickReact
+  onToggleSelect, onOpenMenu, onOpenMedia, onJumpTo, onRetry, onToggleReaction, onQuickReact,
+  authorLabel, authorColor, onCallBack
 }) => {
   const pressTimer = useRef(null)
   const bubbleRef = useRef(null)
@@ -97,7 +107,7 @@ const MessageBubble = ({
       {msg.pinned && <BsPinAngleFill size={11} />}
       {msg.editedAt && !deleted && <span className='italic'>Edited</span>}
       {formatBubbleTime(msg.createdAt)}
-      {mine && !deleted && <StatusIcon status={status} light={mediaOnly} />}
+      {mine && !deleted && !msg.call && <StatusIcon status={status} light={mediaOnly} />}
     </span>
   )
 
@@ -140,6 +150,11 @@ const MessageBubble = ({
             </button>
           )}
 
+          {/* group chats: who sent it (first bubble of a run) */}
+          {authorLabel && (
+            <p className={`truncate pr-6 text-[12.8px] font-medium leading-[22px] ${hasMedia ? 'px-1.5' : ''}`} style={{ color : authorColor }}>{authorLabel}</p>
+          )}
+
           {msg.forwarded && !deleted && (
             <p className={`flex items-center gap-1 text-[12.5px] italic text-wa-muted ${hasMedia ? 'px-1.5 pb-1 pt-0.5' : 'mb-0.5'}`}>
               <RiShareForwardFill size={14} /> Forwarded
@@ -152,9 +167,11 @@ const MessageBubble = ({
             </div>
           )}
 
-          {deleted ? (
+          {msg.call && !deleted ? (
+            <CallEntry call={msg.call} mine={mine} meta={meta} onCallBack={selectMode ? undefined : onCallBack} />
+          ) : deleted ? (
             <p className='flex items-center gap-1.5 pr-14 text-[14.2px] italic text-wa-muted'>
-              <IoBan size={15} /> {mine ? 'You deleted this message' : 'This message was deleted'}
+              <IoBan size={15} /> {msg.deletedByAdmin ? 'This message was deleted by an admin' : mine ? 'You deleted this message' : 'This message was deleted'}
               <span className='absolute bottom-1.5 right-2'>{meta}</span>
             </p>
           ) : (
@@ -250,6 +267,53 @@ const MessageBubble = ({
         )}
       </div>
     </div>
+  )
+}
+
+const callLabel = (call, mine) => {
+  const kind = call.type === 'video' ? 'Video' : 'Voice'
+  if (call.group) {
+    return call.status === 'answered'
+      ? { title : `Group ${kind.toLowerCase()} call`, sub : `${formatCallDuration(call.duration)} · ${call.participants} joined` }
+      : { title : `Group ${kind.toLowerCase()} call`, sub : 'No one joined' }
+  }
+  if (call.status === 'answered') return { title : `${kind} call`, sub : formatCallDuration(call.duration) }
+  if (mine) return { title : `${kind} call`, sub : call.status === 'declined' ? 'Declined' : 'No answer' }
+  return { title : call.status === 'declined' ? `${kind} call` : `Missed ${kind.toLowerCase()} call`, sub : call.status === 'declined' ? 'Declined' : 'Tap to call back' }
+}
+
+export const formatCallDuration = (sec = 0) => {
+  const s = Math.max(0, Math.round(sec))
+  if (s < 60) return `${s} sec`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min${s % 60 ? ` ${s % 60} sec` : ''}`
+  return `${Math.floor(m / 60)} hr ${m % 60} min`
+}
+
+// "Missed voice call" / "Video call · 2 min" entry, tap to call back
+const CallEntry = ({ call, mine, meta, onCallBack }) => {
+  const { title, sub } = callLabel(call, mine)
+  const missed = call.status !== 'answered' && !call.group
+  const Arrow = mine ? MdCallMade : missed ? MdCallMissed : MdCallReceived
+  return (
+    <button
+      type='button'
+      disabled={!onCallBack}
+      onClick={(e) => { e.stopPropagation(); onCallBack?.(call.type) }}
+      className='flex min-w-[210px] items-center gap-3 pb-3 pr-1 pt-1 text-left disabled:cursor-default'
+      title={onCallBack ? `${call.type === 'video' ? 'Video' : 'Voice'} call again` : undefined}
+    >
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${missed && !mine ? 'bg-red-50 text-red-500' : 'bg-black/5 text-[#54656f]'}`}>
+        {call.type === 'video' ? <IoVideocam size={19} /> : <IoCall size={18} />}
+      </span>
+      <span className='min-w-0 flex-1'>
+        <span className='block text-[14.5px] text-wa-text'>{title}</span>
+        <span className='flex items-center gap-1 text-[12.5px] text-wa-muted'>
+          <Arrow size={14} className={missed && !mine ? 'text-red-500' : mine ? 'text-wa-green' : 'text-wa-green'} />{sub}
+        </span>
+      </span>
+      <span className='absolute bottom-1.5 right-2'>{meta}</span>
+    </button>
   )
 }
 

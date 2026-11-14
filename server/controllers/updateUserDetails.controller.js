@@ -1,7 +1,7 @@
 const UserModel = require("../models/user.model");
 const { isAllowedMediaUrl } = require("../helpers/chat");
 
-const VISIBILITY = ['everyone', 'nobody'];
+const VISIBILITY = ['everyone', 'contacts', 'nobody'];
 
 // requires requireAuth middleware (req.user)
 const updateUserDetails = async (req, res) => {
@@ -39,6 +39,12 @@ const updateUserDetails = async (req, res) => {
           }
           update[`privacy.${key}`] = privacy[key];
         }
+      }
+      if (privacy.groups !== undefined) {
+        if (!['everyone', 'contacts'].includes(privacy.groups)) {
+          return res.status(400).json({ message: "Invalid privacy setting", error: true });
+        }
+        update['privacy.groups'] = privacy.groups;
       }
       if (privacy.readReceipts !== undefined) {
         update['privacy.readReceipts'] = !!privacy.readReceipts;

@@ -59,12 +59,16 @@ const lastConversation = (s) => [...s.events].reverse().find((e) => e.ev === 'co
 
   const regexSearch = await post('/api/searchuser', { search: '(a+)+$' }, A.token)
   check('search escapes regex input', regexSearch.status === 200)
-  const search = await post('/api/searchuser', { search: 'bob_' + uid }, A.token)
-  check('search finds user', search.body.data.length === 1 && search.body.data[0]._id === B.id)
+  const partial = await post('/api/searchuser', { search: 'bob_' + uid }, A.token)
+  check('partial search does not reveal strangers', partial.status === 200 && partial.body.data.length === 0)
+  const search = await post('/api/searchuser', { search: B.email }, A.token)
+  check('exact email finds the user', search.body.data.length === 1 && search.body.data[0]._id === B.id)
 
   // ---------- presence ----------
   const a1 = await connect(A.token), a2 = await connect(A.token), b1 = await connect(B.token), c1 = await connect(C.token)
   await sleep(300)
+  // friends: everyone has saved everyone (otherwise first messages would be message requests)
+  for (const [s, others] of [[a1, [B, C]], [b1, [A, C]], [c1, [A, B]]]) for (const o of others) await call(s, 'add-contact', { userId: o.id })
   const bOnline = [...b1.events].reverse().find((e) => e.ev === 'onlineUser')?.data || []
   check('online list contains Alice for Bob', bOnline.includes(A.id))
 

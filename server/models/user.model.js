@@ -2,9 +2,16 @@ const mongoose = require('mongoose');
 
 const visibility = {
     type : String,
-    enum : ['everyone', 'nobody'],
+    enum : ['everyone', 'contacts', 'nobody'],
     default : 'everyone'
 }
+
+// someone this user saved, optionally under their own name for them (like a phone's address book)
+const contactSchema = new mongoose.Schema({
+    userId : { type : mongoose.Schema.ObjectId, ref : 'User', required : true },
+    name : { type : String, trim : true, maxlength : 50, default : '' },
+    addedAt : { type : Date, default : Date.now }
+},{ _id : false })
 
 const userSchema = new mongoose.Schema({
     name : {
@@ -46,8 +53,13 @@ const userSchema = new mongoose.Schema({
         online : visibility,
         profilePhoto : visibility,
         about : visibility,
-        readReceipts : { type : Boolean, default : true }
+        readReceipts : { type : Boolean, default : true },
+        // who can add this user to groups
+        groups : { type : String, enum : ['everyone', 'contacts'], default : 'everyone' }
     },
+    contacts : [contactSchema],
+    // existing accounts get the people they already chat with as contacts once (see helpers/migrate.js)
+    contactsMigrated : { type : Boolean, default : true },
     // users this user has blocked
     blocked : [
         {

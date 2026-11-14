@@ -47,10 +47,33 @@ const fixOtpIndexes = async () => {
     await EmailOtpModel.syncIndexes()
 }
 
+// 4) contacts were added later: existing accounts get everyone they have already written to,
+//    so their chats keep showing names instead of phone numbers. Runs once per account.
+const seedContacts = async () => {
+    const users = await UserModel.find({ contactsMigrated : { $ne : true } }).select('_id contacts').lean()
+    let seeded = 0
+    for (const user of users) {
+        const convIds = await MessageModel.distinct('conversationId', { msgByUserId : user._id })
+        const convs = await ConversationModel.find({ _id : { $in : convIds }, isGroup : { $ne : true } }).select('sender receiver').lean()
+        const have = new Set((user.contacts || []).map((c) => String(c.userId)))
+        const add = []
+        for (const c of convs) {
+            const peer = String(c.sender) === String(user._id) ? c.receiver : c.sender
+            if (!peer || String(peer) === String(user._id) || have.has(String(peer))) continue
+            have.add(String(peer))
+            add.push({ userId : peer, name : '', addedAt : new Date() })
+        }
+        await UserModel.updateOne({ _id : user._id }, { $push : { contacts : { $each : add } }, $set : { contactsMigrated : true } })
+        seeded += add.length
+    }
+    if (users.length) console.log(`migration: added ${seeded} contacts for ${users.length} existing accounts`)
+}
+
 const migrate = async () => {
     await linkMessages()
     await fixUserIndexes()
     await fixOtpIndexes()
+    await seedContacts()
 }
 
 module.exports = migrate
