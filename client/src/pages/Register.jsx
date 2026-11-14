@@ -1,180 +1,186 @@
 import React, { useState } from "react";
-import { IoClose } from "react-icons/io5";
+import { IoClose, IoCamera } from "react-icons/io5";
 import { Link, useNavigate } from "react-router-dom";
-import uploadFile from "../helpers/uploadFile";
+import { useDispatch } from "react-redux";
 import axios from "axios";
-import toast from "react-hot-toast";
+import uploadFile from "../helpers/uploadFile";
+import { notify, notifyError } from '../helpers/toast';
+import { setToken } from "../redux/userSlice";
+import AuthAside from "../components/AuthAside";
+import DefaultAvatar from "../components/DefaultAvatar";
+import EmailOtpStep from "../components/EmailOtpStep";
+import PasswordFields, { passwordProblem } from "../components/PasswordFields";
+import { formatPhone } from "../helpers/phone";
 
+const API = process.env.REACT_APP_BACKEND_URL;
+
+// Registration: 1) email  2) 6-digit code sent to that email  3) profile + password
 const Register = () => {
-  const [data, setData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    profile_pic: "",
-  });
-  const [uploadPhoto, setUploadPhoto] = useState("");
+  const [verified, setVerified] = useState(null); // { channel, target, token }
+  const [data, setData] = useState({ name: "", profile_pic: "" });
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [photoName, setPhotoName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [tried, setTried] = useState(false);
   const navigate = useNavigate();
-
-  const handleOnChange = (e) => {
-    const { name, value } = e.target;
-
-    setData((preve) => {
-      return {
-        ...preve,
-        [name]: value,
-      };
-    });
-  };
+  const dispatch = useDispatch();
 
   const handleUploadPhoto = async (e) => {
     const file = e.target.files[0];
-
-    const uploadPhoto = await uploadFile(file);
-
-    setUploadPhoto(file);
-
-    setData((preve) => {
-      return {
-        ...preve,
-        profile_pic: uploadPhoto?.url,
-      };
-    });
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadFile(file);
+      setPhotoName(file.name);
+      setData((d) => ({ ...d, profile_pic: uploaded?.url || "" }));
+    } catch {
+      notifyError("Couldn't upload the photo. Please try again.");
+    }
+    setUploading(false);
   };
-  const handleClearUploadPhoto = (e) => {
-    e.stopPropagation();
+
+  const clearPhoto = (e) => {
     e.preventDefault();
-    setUploadPhoto(null);
+    e.stopPropagation();
+    setPhotoName("");
+    setData((d) => ({ ...d, profile_pic: "" }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    e.stopPropagation();
+    setTried(true);
+    setError("");
+    const problem = passwordProblem(password, confirm) || (password !== confirm ? "Passwords don't match." : "");
+    if (!data.name.trim()) return setError("Please enter your name.");
+    if (problem) return setError(problem);
 
-    if (!data.profile_pic) {
-      toast.error("Please provide a profile picture");
-      return;
-    }
-
-    const URL = `${process.env.REACT_APP_BACKEND_URL}/api/register`;
-    //     console.log("Register API URL:", URL);
-    // console.log("Data being sent:", data);
-
+    setSubmitting(true);
     try {
-      const response = await axios.post(URL, data);
-      // console.log("response", response);
+      const res = await axios.post(`${API}/api/register`, {
+        name: data.name,
+        [verified.channel === "sms" ? "phone" : "email"]: verified.target,
+        profile_pic: data.profile_pic,
+        password,
+        confirmPassword: confirm,
+        verifyToken: verified.token,
+      });
 
-      toast.success(response.data.message);
-
-      if (response.data.success) {
-        setData({
-          name: "",
-          email: "",
-          password: "",
-          profile_pic: "",
-        });
-
-        navigate("/email");
+      // sign in straight away, like WhatsApp after verification
+      try {
+        const login = await axios.post(`${API}/api/password`, { userId: res.data.data._id, password }, { withCredentials: true });
+        if (login.data.success) {
+          dispatch(setToken(login.data.token));
+          localStorage.setItem("token", login.data.token);
+          notify(`Welcome to Chatify, ${data.name.trim().split(" ")[0]}!`);
+          navigate("/");
+          return;
+        }
+      } catch { /* fall back to the login page */ }
+      notify("Account created. Log in to continue.");
+      navigate("/email");
+    } catch (err) {
+      const body = err?.response?.data;
+      if (body?.code === "not_verified") {
+        notifyError("Your verification expired. Please verify again.");
+        setVerified(null);
+      } else {
+        setError(body?.message || "Couldn't create your account. Please try again.");
       }
-    } catch (error) {
-      toast.error(error?.response?.data?.message);
     }
-    // console.log("data", data);
+    setSubmitting(false);
   };
 
   return (
-    <div className="mt-12">
-      <div className="bg-white w-full max-w-md  rounded overflow-hidden p-4 mx-auto">
-        <h3
-          className="text"
-          style={{ textAlign: "center", fontWeight: "bold" }}
-        >
-          Welcome to Chatify!
-        </h3>
+    <div className="grid md:grid-cols-[1.15fr,1fr]">
+      <div className="p-6 sm:p-10 lg:p-12">
+        {!verified ? (
+          <EmailOtpStep
+            purpose="register"
+            title="Create your account"
+            subtitle="Use your email or phone number. We'll send a 6-digit code to verify it's really you."
+            onVerified={(id, token) => setVerified({ ...id, token })}
+            footer={
+              <p className="text-sm text-wa-muted">
+                Already have an account?{" "}
+                <Link to={"/email"} className="font-medium text-wa-green hover:underline">Log in</Link>
+              </p>
+            }
+          />
+        ) : (
+          <>
+            <p className="inline-flex items-center gap-2 rounded-full bg-wa-green/10 px-3 py-1 text-xs font-medium text-wa-teal">
+              ✓ {verified.channel === "sms" ? formatPhone(verified.target) : verified.target} verified
+            </p>
+            <h1 className="mt-5 text-2xl font-light text-wa-text sm:text-[28px]">Profile info</h1>
+            <p className="mt-1 text-sm text-wa-muted">Add your name, an optional photo and a password.</p>
 
-        <form className="grid gap-4 mt-5" onSubmit={handleSubmit}>
-          <div className="flex flex-col gap-1 font-bold">
-            <label htmlFor="name">Name :</label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              placeholder="Enter your Name"
-              className="bg-slate-100 px-2 py-1 focus:outline-primary"
-              value={data.name}
-              onChange={handleOnChange}
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 font-bold">
-            <label htmlFor="email">Email :</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              placeholder="Enter your Email"
-              className="bg-slate-100 px-2 py-1 focus:outline-primary"
-              value={data.email}
-              onChange={handleOnChange}
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 font-bold">
-            <label htmlFor="password">Password :</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              placeholder="Enter your Password"
-              className="bg-slate-100 px-2 py-1 focus:outline-primary"
-              value={data.password}
-              onChange={handleOnChange}
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1 font-bold">
-            <label htmlFor="profile_pic">
-              Photo :
-              <div className="h-14 bg-slate-200 flex justify-center items-center border rounded hover:border-primary cursor-pointer">
-                <p className="text-sm max-w-[300px] text-ellipsis line-clamp-1">
-                  {uploadPhoto?.name
-                    ? uploadPhoto?.name
-                    : "Upload profile photo"}
-                </p>
-                {uploadPhoto?.name && (
-                  <button
-                    className="text-lg ml-2 hover:text-red-600"
-                    onClick={handleClearUploadPhoto}
-                  >
-                    <IoClose />
-                  </button>
-                )}
+            <form className="mt-8 grid gap-6" onSubmit={handleSubmit} noValidate>
+              <div className="flex items-center gap-5">
+                <label htmlFor="profile_pic" className="group relative flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full">
+                  {data.profile_pic ? (
+                    <img src={data.profile_pic} alt="profile" className="h-full w-full object-cover" />
+                  ) : (
+                    <DefaultAvatar />
+                  )}
+                  <div className={`absolute inset-0 flex flex-col items-center justify-center bg-black/40 text-[10px] font-medium uppercase leading-tight text-white transition-opacity ${data.profile_pic && !uploading ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}>
+                    {uploading ? (
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <>
+                        <IoCamera size={22} />
+                        <span className="mt-1 text-center">{data.profile_pic ? "Change" : "Add photo"}</span>
+                      </>
+                    )}
+                  </div>
+                </label>
+                <div className="min-w-0">
+                  <p className="text-[15px] text-wa-text">Profile photo <span className="text-wa-muted">(optional)</span></p>
+                  {photoName ? (
+                    <div className="mt-1 flex items-center gap-2 text-sm text-wa-muted">
+                      <span className="max-w-[200px] truncate">{photoName}</span>
+                      <button type="button" onClick={clearPhoto} className="rounded-full p-1 hover:bg-wa-panel hover:text-red-500" title="Remove photo">
+                        <IoClose />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-wa-muted">Click the circle to upload</p>
+                  )}
+                </div>
+                <input type="file" id="profile_pic" accept="image/*" className="hidden" onChange={handleUploadPhoto} />
               </div>
-            </label>
 
-            <input
-              type="file"
-              id="profile_pic"
-              name="profile_pic"
-              className="bg-slate-100 px-2 py-1 focus:outline-primary hidden"
-              onChange={handleUploadPhoto}
-            />
-          </div>
+              <div>
+                <label htmlFor="name" className="text-sm text-wa-green">Your name</label>
+                <input
+                  type="text"
+                  id="name"
+                  maxLength={50}
+                  placeholder="Enter your name"
+                  className="wa-input"
+                  value={data.name}
+                  onChange={(e) => setData((d) => ({ ...d, name: e.target.value }))}
+                  required
+                />
+              </div>
 
-          <button className="bg-primary text-lg  px-4 py-1 hover:bg-secondary rounded mt-2 font-bold text-white leading-relaxed tracking-wide">
-            Register
-          </button>
-        </form>
+              <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} showErrors={tried} />
 
-        <p className="my-3 text-center">
-          Already have account ?{" "}
-          <Link to={"/email"} className="hover:text-primary font-bold">
-            Login
-          </Link>
-        </p>
+              {error && <p role="alert" className="-mt-2 text-sm text-red-600">{error}</p>}
+
+              <div className="mt-2 flex flex-col-reverse items-stretch gap-5 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
+                <button type="button" onClick={() => setVerified(null)} className="text-sm font-medium text-wa-green hover:underline">Use a different email or number</button>
+                <button className="wa-btn" disabled={uploading || submitting}>{submitting ? "Creating account…" : "Create account"}</button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
+
+      <AuthAside />
     </div>
   );
 };

@@ -1,14 +1,25 @@
 const mongoose = require('mongoose');
 
+const visibility = {
+    type : String,
+    enum : ['everyone', 'nobody'],
+    default : 'everyone'
+}
+
 const userSchema = new mongoose.Schema({
     name : {
         type : String,
         required : true
     },
+    // an account has an email, a phone number, or both (unique when present; see indexes below)
     email : {
         type : String,
-        required : true,
-        unique : true
+        trim : true
+    },
+    // E.164 format, e.g. +919876543210
+    phone : {
+        type : String,
+        trim : true
     },
     password : {
         type : String,
@@ -17,10 +28,40 @@ const userSchema = new mongoose.Schema({
     profile_pic : {
         type : String,
         default : ""
-    }
+    },
+    about : {
+        type : String,
+        default : "Hey there! I am using Chatify.",
+        maxlength : 140
+    },
+    lastSeen : {
+        type : Date
+    },
+    // set on password reset; tokens issued before this are no longer accepted
+    passwordChangedAt : {
+        type : Date
+    },
+    privacy : {
+        lastSeen : visibility,
+        online : visibility,
+        profilePhoto : visibility,
+        about : visibility,
+        readReceipts : { type : Boolean, default : true }
+    },
+    // users this user has blocked
+    blocked : [
+        {
+            type : mongoose.Schema.ObjectId,
+            ref : 'User'
+        }
+    ]
 },{
     timestamps : true
 })
+
+// unique only when the field exists, so phone-only and email-only accounts can coexist
+userSchema.index({ email : 1 }, { unique : true, partialFilterExpression : { email : { $type : 'string' } } })
+userSchema.index({ phone : 1 }, { unique : true, partialFilterExpression : { phone : { $type : 'string' } } })
 
 const UserModel = mongoose.model('User',userSchema)
 

@@ -2,17 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Reusable component classes. Kept inside the components layer so responsive
+   utilities placed next to them (md:hidden, w-full, ...) can still override them. */
+@layer components {
+  /* underline inputs used on auth pages; 16px on phones so iOS doesn't zoom in */
+  .wa-input {
+    @apply w-full border-0 border-b-2 border-wa-border bg-transparent px-1 py-2 text-base text-wa-text outline-none transition-colors sm:text-[15px];
+  }
+  .wa-input::placeholder { color: #8696a0; }
+  .wa-input:focus { @apply border-wa-green; }
+
+  .wa-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-wa-green px-6 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-wa-greenDark disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .wa-icon-btn {
+    @apply flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5;
+  }
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  @apply bg-slate-200
+  @apply bg-wa-panel text-wa-text font-sans;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }

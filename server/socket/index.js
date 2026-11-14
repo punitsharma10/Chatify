@@ -1,174 +1,82 @@
 const express = require('express')
-const cors = require("cors");
 const { Server } = require('socket.io')
 const http  = require('http')
 const getUserDetailsFromToken = require('../helpers/getUserDetailsFromToken')
 const UserModel = require('../models/user.model')
-const { ConversationModel,MessageModel } = require('../models/conversation.model')
-const getConversation = require('../helpers/getConversation')
+const presence = require('./presence')
+const { corsOrigin } = require('../helpers/allowedOrigins')
+const registerChatHandlers = require('./chatHandlers')
 
 const app = express()
 
 /***socket connection */
 const server = http.createServer(app)
-  
-const corsOptions = {
-    origin: "https://chatify-frontend-vj8e.onrender.com", 
-    credentials: true
-  };
-  
-  app.use(cors(corsOptions));
-  
-  const io = new Server(server, {
-    cors: {
-      origin: "https://chatify-frontend-vj8e.onrender.com",
-      credentials: true
+const io = new Server(server,{
+    cors : {
+        origin : corsOrigin,
+        credentials : true
+    },
+    // detect dropped connections quickly so presence doesn't go stale
+    pingInterval : 20000,
+    pingTimeout : 15000
+})
+
+// every online user gets the list of online users they are allowed to see (privacy + blocks)
+const broadcastOnline = () => {
+    for (const id of presence.onlineIds()) {
+        io.to(id).emit('onlineUser', presence.visibleOnlineFor(id))
     }
-  });
-  
+}
 
-/***
- * socket running at http://localhost:3000/
- */
-
-//online user
-const onlineUser = new Set()
-
-io.on('connection',async(socket)=>{
-    // console.log("connect User ", socket.id)
-
-    const token = socket.handshake.auth.token 
-
-    //current user details 
-    const user = await getUserDetailsFromToken(token)
-
-    //create a room
-    socket.join(user?._id.toString())
-    onlineUser.add(user?._id?.toString())
-
-    io.emit('onlineUser',Array.from(onlineUser))
-
-    socket.on('message-page',async(userId)=>{
-        // console.log('userId',userId)
-        const userDetails = await UserModel.findById(userId).select("-password")
-        
-        const payload = {
-            _id : userDetails?._id,
-            name : userDetails?.name,
-            email : userDetails?.email,
-            profile_pic : userDetails?.profile_pic,
-            online : onlineUser.has(userId)
+/*** authenticate every socket before it connects; identity always comes from the token, never from the client payload */
+io.use(async(socket, next)=>{
+    try {
+        const user = await getUserDetailsFromToken(socket.handshake.auth?.token)
+        if(!user || user.logout || !user._id){
+            return next(new Error('unauthorized'))
         }
-        socket.emit('message-user',payload)
+        socket.data.userId = user._id.toString()
+        socket.data.user = user
+        // new client identifies itself so the server can keep the old event format for older clients
+        socket.data.v2 = socket.handshake.auth?.client === 'v2'
+        next()
+    } catch (error) {
+        next(new Error('unauthorized'))
+    }
+})
 
+io.on('connection',(socket)=>{
+    const userId = socket.data.userId
 
-         //get previous message
-         const getConversationMessage = await ConversationModel.findOne({
-            "$or" : [
-                { sender : user?._id, receiver : userId },
-                { sender : userId, receiver :  user?._id}
-            ]
-        }).populate('messages').sort({ updatedAt : -1 })
+    //create a room per user (all their tabs/devices join it)
+    socket.join(userId)
 
-        socket.emit('message',getConversationMessage?.messages || [])
-    })
+    const cameOnline = presence.add(socket.data.user)
+    if(cameOnline){
+        broadcastOnline()
+    }else{
+        socket.emit('onlineUser', presence.visibleOnlineFor(userId))
+    }
 
-
-    //new message
-    socket.on('new message',async(data)=>{
-
-        //check conversation is available both user
-
-        let conversation = await ConversationModel.findOne({
-            "$or" : [
-                { sender : data?.sender, receiver : data?.receiver },
-                { sender : data?.receiver, receiver :  data?.sender}
-            ]
-        })
-
-        //if conversation is not available
-        if(!conversation){
-            const createConversation = await ConversationModel({
-                sender : data?.sender,
-                receiver : data?.receiver
-            })
-            conversation = await createConversation.save()
-        }
-        
-        const message = new MessageModel({
-          text : data.text,
-          imageUrl : data.imageUrl,
-          videoUrl : data.videoUrl,
-          msgByUserId :  data?.msgByUserId,
-        })
-        const saveMessage = await message.save()
-
-        const updateConversation = await ConversationModel.updateOne({ _id : conversation?._id },{
-            "$push" : { messages : saveMessage?._id }
-        })
-
-        const getConversationMessage = await ConversationModel.findOne({
-            "$or" : [
-                { sender : data?.sender, receiver : data?.receiver },
-                { sender : data?.receiver, receiver :  data?.sender}
-            ]
-        }).populate('messages').sort({ updatedAt : -1 })
-
-
-        io.to(data?.sender).emit('message',getConversationMessage?.messages || [])
-        io.to(data?.receiver).emit('message',getConversationMessage?.messages || [])
-
-        //send conversation
-        const conversationSender = await getConversation(data?.sender)
-        const conversationReceiver = await getConversation(data?.receiver)
-
-        io.to(data?.sender).emit('conversation',conversationSender)
-        io.to(data?.receiver).emit('conversation',conversationReceiver)
-    })
-
-
-    //sidebar
-    socket.on('sidebar',async(currentUserId)=>{
-        // console.log("current user",currentUserId)
-
-        const conversation = await getConversation(currentUserId)
-
-        socket.emit('conversation',conversation)
-        
-    })
-
-    socket.on('seen',async(msgByUserId)=>{
-        
-        let conversation = await ConversationModel.findOne({
-            "$or" : [
-                { sender : user?._id, receiver : msgByUserId },
-                { sender : msgByUserId, receiver :  user?._id}
-            ]
-        })
-
-        const conversationMessageId = conversation?.messages || []
-
-        const updateMessages  = await MessageModel.updateMany(
-            { _id : { "$in" : conversationMessageId }, msgByUserId : msgByUserId },
-            { "$set" : { seen : true }}
-        )
-
-        //send conversation
-        const conversationSender = await getConversation(user?._id?.toString())
-        const conversationReceiver = await getConversation(msgByUserId)
-
-        io.to(user?._id?.toString()).emit('conversation',conversationSender)
-        io.to(msgByUserId).emit('conversation',conversationReceiver)
-    })
+    registerChatHandlers(io, socket, { broadcastOnline })
 
     //disconnect
-    socket.on('disconnect',()=>{
-        onlineUser.delete(user?._id?.toString())
-        console.log('disconnect user ',socket.id)
+    socket.on('disconnect',async()=>{
+        const wentOffline = presence.remove(userId)
+        if(wentOffline){
+            try {
+                await UserModel.updateOne({ _id : userId }, { $set : { lastSeen : new Date() } })
+            } catch (error) {
+                console.log('lastSeen update failed', error.message)
+            }
+            broadcastOnline()
+        }
     })
 })
 
 module.exports = {
     app,
-    server
+    server,
+    io,
+    broadcastOnline
 }

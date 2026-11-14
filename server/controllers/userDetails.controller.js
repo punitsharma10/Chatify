@@ -1,8 +1,9 @@
 const getUserDetailsFromToken = require("../helpers/getUserDetailsFromToken")
+const { getToken } = require("../helpers/requireAuth")
 
 const userDetails = async (req, res)=>{
     try {
-        const token = req.cookies.token || ""
+        const token = getToken(req)
 
         const user = await getUserDetailsFromToken(token)
 

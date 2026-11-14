@@ -1,67 +1,56 @@
 import React from 'react'
-import { PiUserCircle } from "react-icons/pi";
 import { useSelector } from 'react-redux';
+import DefaultAvatar from './DefaultAvatar';
 
-const Avatar = ({userId,name,imageUrl,width,height}) => {
-    const onlineUser = useSelector(state => state?.user?.onlineUser)
+const colors = ['#25d366', '#53bdeb', '#ff8f6b', '#a791ff', '#ffbc38', '#06cf9c', '#fc6d9b', '#7f66ff', '#02a698']
 
-    let avatarName = ""
+// same name always gets the same colour (instead of random on every render)
+const colorFor = (name = '') => {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return colors[h % colors.length]
+}
 
-    if(name){
-      const splitName = name?.split(" ")
+const Avatar = ({ userId, name, imageUrl, width, height }) => {
+  const onlineUser = useSelector(state => state?.user?.onlineUser)
 
-      if(splitName.length > 1){
-        avatarName = splitName[0][0]+splitName[1][0]
-      }else{
-        avatarName = splitName[0][0]
-      }
-    }
+  let avatarName = ""
+  if (name) {
+    const splitName = name.trim().split(" ").filter(Boolean)
+    avatarName = splitName.length > 1 ? splitName[0][0] + splitName[1][0] : (splitName[0]?.[0] || "")
+  }
 
-    const bgColor = [
-      'bg-slate-200',
-      'bg-teal-200',
-      'bg-red-200',
-      'bg-green-200',
-      'bg-yellow-200',
-      'bg-gray-200',
-      "bg-cyan-200",
-      "bg-sky-200",
-      "bg-blue-200"
-    ]
+  const isOnline = Boolean(userId) && onlineUser?.includes(userId)
+  const dot = Math.max(10, Math.round(width * 0.24))
 
-    const randomNumber = Math.floor(Math.random() * 9)
-
-    const isOnline = onlineUser.includes(userId)
   return (
-    <div className={`text-slate-800  rounded-full font-bold relative`} style={{width : width+"px", height : height+"px" }}>
-        {
-            imageUrl ? (
-                <img
-                    src={imageUrl}
-                    width={width}
-                    height={height}
-                    alt={name}
-                    className='overflow-hidden rounded-full'
-                />
-            ) : (
-                name ? (
-                    <div  style={{width : width+"px", height : height+"px" }} className={`overflow-hidden rounded-full flex justify-center items-center text-lg ${bgColor[randomNumber]}`}>
-                        {avatarName}
-                    </div>
-                ) :(
-                  <PiUserCircle
-                    size={width}
-                  />
-                )
-            )
-        }
+    <div className='relative shrink-0 rounded-full' style={{ width: width + "px", height: height + "px" }}>
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={name}
+          className='h-full w-full rounded-full object-cover'
+        />
+      ) : name ? (
+        <div
+          className='flex h-full w-full items-center justify-center rounded-full font-medium uppercase text-white'
+          style={{ backgroundColor: colorFor(name), fontSize: Math.max(12, width * 0.38) + "px" }}
+        >
+          {avatarName}
+        </div>
+      ) : (
+        <div className='h-full w-full overflow-hidden rounded-full'>
+          <DefaultAvatar />
+        </div>
+      )}
 
-        {
-          isOnline && (
-            <div className='bg-green-600 p-1 absolute bottom-2 -right-1 z-10 rounded-full'></div>
-          )
-        }
-      
+      {isOnline && (
+        <span
+          className='absolute bottom-0 right-0 z-10 rounded-full border-2 border-white bg-wa-badge'
+          style={{ width: dot + "px", height: dot + "px" }}
+          title='online'
+        />
+      )}
     </div>
   )
 }

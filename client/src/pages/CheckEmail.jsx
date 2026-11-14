@@ -1,93 +1,74 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import toast from 'react-hot-toast';
-import { PiUserCircle } from "react-icons/pi";
+import { friendly } from '../helpers/toast';
+import { IoLogInOutline } from "react-icons/io5";
+import AuthAside from '../components/AuthAside';
+import IdentifierInput, { emptyIdentifier } from '../components/IdentifierInput';
+import { toE164, isValidE164 } from '../helpers/phone';
 
+// Login step 1: email or phone number
 const CheckEmail = () => {
-  const [data,setData] = useState({
-    email : "",
-  })
+  const [ident, setIdent] = useState(() => emptyIdentifier())
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
-  const handleOnChange = (e)=>{
-    const { name, value} = e.target
-
-    setData((preve)=>{
-      return{
-          ...preve,
-          [name] : value
-      }
-    })
-  }
-
-  const handleSubmit = async(e)=>{
+  const handleSubmit = async (e) => {
     e.preventDefault()
     e.stopPropagation()
+    setError('')
 
-    const URL = `${process.env.REACT_APP_BACKEND_URL}/api/email`
-
-    try {
-        const response = await axios.post(URL,data)
-
-        toast.success(response.data.message)
-
-        if(response.data.success){
-            setData({
-              email : "",
-            })
-            navigate('/password',{
-              state : response?.data?.data
-            })
-        }
-    } catch (error) {
-        toast.error(error?.response?.data?.message)
+    let body
+    if (ident.channel === 'sms') {
+      const phone = toE164(ident.country, ident.number)
+      if (!isValidE164(phone)) return setError('Please enter a valid phone number.')
+      body = { phone }
+    } else {
+      if (!ident.email.trim()) return setError('Please enter your email address.')
+      body = { email: ident.email.trim() }
     }
+
+    setBusy(true)
+    try {
+      const response = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/email`, body)
+      if (response.data.success) {
+        navigate('/password', { state: response?.data?.data })
+      }
+    } catch (err) {
+      setError(friendly(err?.response?.data?.message))
+    }
+    setBusy(false)
   }
 
-
   return (
-    <div className='mt-12'>
-        <div className='bg-white w-full max-w-md  rounded overflow-hidden p-4 mx-auto'>
-
-            <div className='w-fit mx-auto mb-2'>
-                <PiUserCircle
-                  size={80}
-                />
-            </div>
-
-            <h3 className="text" style={{ textAlign: "center", fontWeight: "bold"}}>Welcome to Chatify!</h3>
-
-          <form className='grid gap-4 mt-3' onSubmit={handleSubmit}>
-              
-
-              <div className='flex flex-col gap-1 font-bold'>
-                <label htmlFor='email'>Email :</label>
-                <input
-                  type='email'
-                  id='email'
-                  name='email'
-                  placeholder='Enter your Email' 
-                  className='bg-slate-100 px-2 py-1 focus:outline-primary'
-                  value={data.email}
-                  onChange={handleOnChange}
-                  required
-                />
-              </div>
-
-              <button
-               className='bg-primary text-lg  px-4 py-1 hover:bg-secondary rounded mt-2 font-bold text-white leading-relaxed tracking-wide'
-              >
-                Let's Go
-              </button>
-
-          </form>
-
-          <p className='my-3 text-center'>New User ? <Link to={"/register"} className='hover:text-primary font-bold'>Register</Link></p>
+    <div className='grid md:grid-cols-[1.15fr,1fr]'>
+      <div className='p-6 sm:p-10 lg:p-12'>
+        <div className='flex h-14 w-14 items-center justify-center rounded-full bg-wa-green/10 text-wa-green'>
+          <IoLogInOutline size={28} />
         </div>
+        <h1 className='mt-6 text-2xl sm:text-[28px] font-light text-wa-text'>Log in to Chatify</h1>
+        <p className='mt-1 text-sm text-wa-muted'>Use the email address or phone number you registered with.</p>
+
+        <form className='mt-8 grid gap-8' onSubmit={handleSubmit} noValidate>
+          <div>
+            <IdentifierInput value={ident} onChange={(v) => { setIdent(v); setError('') }} idPrefix='login' />
+            {error && <p role='alert' className='mt-2 text-sm text-red-600'>{error}</p>}
+          </div>
+
+          <div className='flex flex-col-reverse items-stretch gap-5 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left'>
+            <p className='text-sm text-wa-muted'>
+              New to Chatify?{" "}
+              <Link to={"/register"} className='font-medium text-wa-green hover:underline'>Create account</Link>
+            </p>
+            <button className='wa-btn' disabled={busy}>{busy ? 'Checking…' : 'Next'}</button>
+          </div>
+        </form>
+      </div>
+
+      <AuthAside />
     </div>
   )
 }
 
 export default CheckEmail;
-

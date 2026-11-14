@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "check": "node scripts/check.js",
+    "test": "node tests/run.js"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +20,14 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
+    "nodemailer": "^6.10.1",
     "nodemon": "^3.1.9",
     "socket.io": "^4.8.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
   }
 }

@@ -7,6 +7,7 @@ const cors = require("cors");
 const { app, server } = require('./socket/index')
 
 const router = require("./routes/route")
+const { corsOrigin } = require("./helpers/allowedOrigins")
 
 // const app = express();
 const PORT = process.env.PORT || 5000;
@@ -14,7 +15,7 @@ const PORT = process.env.PORT || 5000;
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors({
-  origin: "https://chatify-frontend-vj8e.onrender.com",
+  origin : corsOrigin,
   credentials : true
 }))
 app.use(express.json());
@@ -28,6 +29,8 @@ app.use(express.raw({ type: "application/*", limit: "30mb" }));
 mongoose.connect(process.env.MONGODB_URI, {})
   .then(() => {
     console.log("connected to mongodb");
+    // link pre-existing messages to their conversations (no-op once done)
+    require("./helpers/migrate")().catch((err) => console.log("migration error", err.message));
   })
   .catch((err) => {
     console.log("error", err);
