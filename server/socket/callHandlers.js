@@ -20,14 +20,8 @@ const inCall = new Map()  // userId -> callId (one call at a time per person, 1:
 const groupCalls = new Map() // callId -> { id, groupId, type, startedBy, participants: Map<userId, socketId>, everJoined: Set, connectedAt }
 const groupCallOf = new Map() // groupId -> callId
 
-// STUN finds each browser's public address (free, Google). TURN relays media when a direct
-// connection is impossible (strict mobile / office networks); configure it with env variables.
-const iceServers = () => {
-    const list = [{ urls : ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }]
-    const urls = (process.env.TURN_URLS || '').split(',').map((u) => u.trim()).filter(Boolean)
-    if (urls.length) list.push({ urls, username : process.env.TURN_USERNAME || '', credential : process.env.TURN_CREDENTIAL || '' })
-    return list
-}
+const { getIceServers : iceServers, turnConfigured } = require('../helpers/iceServers')
+if (!turnConfigured()) console.log('[calls] no TURN server configured: calls between different networks (e.g. mobile data) may fail to connect')
 
 const loadUser = (id) => UserModel.findById(id).select('-password').lean()
 
@@ -91,7 +85,7 @@ module.exports = function registerCallHandlers(io, socket) {
         return call
     }
 
-    on('call-config', async () => ({ iceServers : iceServers() }))
+    on('call-config', async () => ({ iceServers : await iceServers() }))
 
     /* ================= group calls ================= */
 
@@ -189,7 +183,7 @@ module.exports = function registerCallHandlers(io, socket) {
             groupId : gc.groupId,
             type : gc.type,
             participants : await Promise.all(others.map(([uid]) => person(uid, me))),
-            iceServers : iceServers()
+            iceServers : await iceServers()
         }
     }
 
@@ -299,7 +293,7 @@ module.exports = function registerCallHandlers(io, socket) {
         call.timer = setTimeout(() => finish(call, 'no-answer'), RING_TIMEOUT_MS)
 
         io.to(call.callee).emit('call-incoming', { callId : call.id, type, from : publicUser(caller, callee) })
-        return { callId : call.id, iceServers : iceServers() }
+        return { callId : call.id, iceServers : await iceServers() }
     })
 
     on('call-accept', async ({ callId }) => {
@@ -312,7 +306,7 @@ module.exports = function registerCallHandlers(io, socket) {
         io.to(call.callerSocket).emit('call-accepted', { callId : call.id })
         // stop ringing on the callee's other tabs / devices
         socket.to(me).emit('call-ended', { callId : call.id, reason : 'answered-elsewhere' })
-        return { iceServers : iceServers() }
+        return { iceServers : await iceServers() }
     })
 
     on('call-reject', async ({ callId }) => {
@@ -356,3 +350,4 @@ module.exports = function registerCallHandlers(io, socket) {
 }
 
 module.exports.iceServers = iceServers
+module.exports.turnConfigured = turnConfigured
