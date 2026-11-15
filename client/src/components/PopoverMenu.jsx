@@ -49,19 +49,19 @@ const PopoverMenu = ({ anchor, items, header, onClose, align = 'right' }) => {
         ref={ref}
         onClick={(e) => e.stopPropagation()}
         className={phone
-          ? 'absolute inset-x-0 bottom-0 animate-pop rounded-t-2xl bg-white pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-card'
-          : 'absolute w-56 animate-pop rounded-md bg-white py-2 shadow-menu'}
+          ? 'absolute inset-x-0 bottom-0 animate-pop rounded-t-2xl bg-wa-surface pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-card'
+          : 'absolute w-56 animate-pop rounded-md bg-wa-surface py-2 shadow-menu'}
         style={phone ? undefined : { left : pos?.left ?? -9999, top : pos?.top ?? -9999 }}
       >
-        {phone && <div className='mx-auto mb-2 h-1 w-10 rounded-full bg-[#d1d7db]' />}
+        {phone && <div className='mx-auto mb-2 h-1 w-10 rounded-full bg-wa-line' />}
         {header}
         {visible.map((item) => (
           <button
             key={item.label}
             onClick={() => { onClose(); item.onClick() }}
-            className={`flex w-full items-center gap-4 px-6 text-left text-[15px] hover:bg-wa-panel sm:gap-3 sm:text-[14.5px] ${phone ? 'py-3.5' : 'py-2.5'} ${item.danger ? 'text-red-600' : 'text-[#3b4a54]'}`}
+            className={`flex w-full items-center gap-4 px-6 text-left text-[15px] hover:bg-wa-panel sm:gap-3 sm:text-[14.5px] ${phone ? 'py-3.5' : 'py-2.5'} ${item.danger ? 'text-red-600' : 'text-wa-strong'}`}
           >
-            {item.icon && <span className='w-5 shrink-0 text-[#54656f]'>{item.icon}</span>}
+            {item.icon && <span className='w-5 shrink-0 text-wa-icon'>{item.icon}</span>}
             {item.label}
           </button>
         ))}

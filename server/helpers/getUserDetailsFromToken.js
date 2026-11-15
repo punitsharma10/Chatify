@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken')
 const UserModel = require('../models/user.model')
+const { sessionActive, touchSession } = require('./sessions')
 
 const sessionOut = {
     message : "session out",
@@ -19,6 +20,10 @@ const getUserDetailsFromToken = async(token)=>{
         if (!user) return sessionOut
         // a password reset signs out sessions created before it
         if (user.passwordChangedAt && decode.iat * 1000 < user.passwordChangedAt.getTime() - 1000) return sessionOut
+        // the device was logged out (Linked devices / Log out)
+        if (!(await sessionActive(decode.sid))) return sessionOut
+        touchSession(decode.sid)
+        user.$locals.sid = decode.sid || null
         return user
     } catch (error) {
         return sessionOut

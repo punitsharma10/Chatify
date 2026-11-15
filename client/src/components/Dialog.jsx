@@ -12,14 +12,14 @@ const Dialog = ({ title, children, onClose, actions = [], wide = false }) => {
   const stacked = actions.length > 2
 
   return (
-    <div className='fixed inset-0 z-50 flex items-center justify-center bg-white/80 p-5 animate-[fadeIn_.15s_ease-out]' onClick={onClose}>
+    <div className='fixed inset-0 z-50 flex items-center justify-center bg-wa-surface/80 p-5 animate-[fadeIn_.15s_ease-out]' onClick={onClose}>
       <div
         role='dialog'
         aria-modal='true'
-        className={`w-full animate-pop rounded-[3px] bg-white px-6 pb-5 pt-[22px] shadow-[0_17px_50px_0_rgba(11,20,26,.19),0_12px_15px_0_rgba(11,20,26,.24)] ${wide ? 'max-w-[520px]' : 'max-w-[460px]'}`}
+        className={`w-full animate-pop rounded-[3px] bg-wa-surface px-6 pb-5 pt-[22px] shadow-[0_17px_50px_0_rgba(11,20,26,.19),0_12px_15px_0_rgba(11,20,26,.24)] ${wide ? 'max-w-[520px]' : 'max-w-[460px]'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <h2 className='mb-3 text-[20px] leading-7 text-[#3b4a54]'>{title}</h2>}
+        {title && <h2 className='mb-3 text-[20px] leading-7 text-wa-strong'>{title}</h2>}
         {children && <div className='text-[14.2px] leading-5 text-wa-muted'>{children}</div>}
         {actions.length > 0 && (
           <div className={`mt-7 flex gap-2.5 ${stacked ? 'flex-col items-end' : 'flex-wrap justify-end'}`}>
@@ -33,7 +33,7 @@ const Dialog = ({ title, children, onClose, actions = [], wide = false }) => {
                   className={`h-9 rounded-full px-6 text-sm font-medium transition-colors disabled:opacity-50 ${
                     filled
                       ? 'bg-wa-teal text-white shadow-sm hover:bg-[#017561]'
-                      : 'border border-[#d1d7db] bg-white text-wa-teal hover:bg-wa-hover'
+                      : 'border border-wa-line bg-wa-surface text-wa-teal hover:bg-wa-hover'
                   }`}
                 >
                   {a.label}

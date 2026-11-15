@@ -12,6 +12,12 @@ const receiptSchema = new mongoose.Schema({
     at : { type : Date, required : true }
 },{ _id : false })
 
+const pollVoteSchema = new mongoose.Schema({
+    userId : { type : ObjectId, ref : 'User', required : true },
+    options : { type : [Number], default : [] },
+    at : { type : Date }
+},{ _id : false })
+
 const messageSchema = new mongoose.Schema({
     conversationId : {
         type : ObjectId,
@@ -91,6 +97,37 @@ const messageSchema = new mongoose.Schema({
         duration : { type : Number }, // seconds, for answered calls
         participants : { type : Number } // group calls: how many people joined
     },
+    // @mentions in group messages (ids of members mentioned in the text)
+    mentions : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    // poll: question + options; every voter's current choice (indexes into options)
+    poll : {
+        question : { type : String },
+        options : { type : [String], default : undefined },
+        multiple : { type : Boolean },
+        votes : { type : [pollVoteSchema], default : undefined }
+    },
+    // preview of the first link in the text, fetched by the server after sending
+    linkPreview : {
+        url : String, title : String, description : String, image : String, siteName : String
+    },
+    // end-to-end encrypted content: { v, from, dev, to, cid, t, iv, ct, sig, keys:[{ u, d, epk, iv, wk }] }.
+    // The server can't read it: text, media links + keys, poll text, contact, location and link preview are all inside.
+    e2ee : { type : mongoose.Schema.Types.Mixed },
+    // coarse type of an encrypted message (image / video / file / audio / sticker / poll / contact / location / text / link)
+    // so "Media, links and docs" and validation keep working without the server seeing the content
+    e2eeKind : { type : String },
+    viewOnceKind : { type : String },
+    // photo / video that can be opened once by each recipient
+    viewOnce : { type : Boolean },
+    // delivered without sound / notification
+    silent : { type : Boolean },
+    viewedBy : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    // shared contact card
+    contact : { userId : { type : ObjectId, ref : 'User' }, name : String, phone : String, email : String },
+    // shared location
+    location : { lat : Number, lng : Number, name : String },
+    // reply to someone's status (snapshot, statuses disappear after 24 hours)
+    statusReply : { statusId : ObjectId, ownerId : ObjectId, kind : String, text : String, mediaUrl : String, background : String, e2ee : mongoose.Schema.Types.Mixed },
     // an admin deleted someone else's message for everyone
     deletedByAdmin : { type : Boolean, default : false },
     // grey notice in the chat, e.g. "Alice added Bob". Names are a snapshot so they survive members leaving.
@@ -111,6 +148,7 @@ messageSchema.index(
 )
 messageSchema.index({ expiresAt : 1 }, { expireAfterSeconds : 0 })
 messageSchema.index({ starredBy : 1 })
+messageSchema.index({ conversationId : 1, 'call.media' : 1 }, { partialFilterExpression : { 'call.media' : { $exists : true } } })
 messageSchema.index({ recipients : 1, createdAt : -1 }, { partialFilterExpression : { 'recipients.0' : { $exists : true } } })
 
 // per-user settings for a conversation (archive, pin, mute, clear, delete-for-me)
@@ -121,6 +159,13 @@ const userStateSchema = new mongoose.Schema({
     pinnedAt : { type : Date },
     muted : { type : Boolean, default : false },
     markedUnread : { type : Boolean, default : false },
+    // muted until this date (no date = muted until unmuted, like "Always")
+    mutedUntil : { type : Date },
+    favorite : { type : Boolean, default : false },
+    // hidden behind the chat lock secret code
+    locked : { type : Boolean, default : false },
+    // private note about this chat, only visible to this user
+    note : { type : String, default : '', maxlength : 2000 },
     // messages created before this date are hidden for this user ("clear chat")
     clearedAt : { type : Date },
     // conversation hidden from this user's list until a newer message arrives ("delete chat")
@@ -181,6 +226,8 @@ const conversationSchema = new mongoose.Schema({
         }
     ],
     userState : [userStateSchema],
+    // group invite link code (anyone with the link can join)
+    inviteCode : { type : String },
     // disappearing messages timer in seconds (0 = off)
     disappearAfter : { type : Number, default : 0 },
     lastMessageAt : { type : Date }
@@ -192,6 +239,7 @@ conversationSchema.index({ sender : 1, receiver : 1 })
 conversationSchema.index({ receiver : 1 })
 conversationSchema.index({ 'members.userId' : 1 })
 conversationSchema.index({ 'pastMembers.userId' : 1 })
+conversationSchema.index({ inviteCode : 1 }, { unique : true, partialFilterExpression : { inviteCode : { $type : 'string' } } })
 
 const MessageModel = mongoose.model('Message',messageSchema)
 const ConversationModel = mongoose.model('Conversation',conversationSchema)

@@ -52,7 +52,7 @@ export const OtpInput = ({ value, onChange, disabled, invalid, length : LENGTH =
             if (e.key === 'ArrowRight' && i < LENGTH - 1) refs.current[i + 1]?.focus()
           }}
           className={`h-12 w-10 rounded-none border-0 border-b-2 bg-transparent text-center text-2xl text-wa-text outline-none transition-colors sm:h-14 sm:w-12 ${
-            invalid ? 'border-red-500 text-red-600' : d ? 'border-wa-green' : 'border-[#d1d7db] focus:border-wa-green'
+            invalid ? 'border-red-500 text-red-600' : d ? 'border-wa-green' : 'border-wa-line focus:border-wa-green'
           }`}
         />
       ))}

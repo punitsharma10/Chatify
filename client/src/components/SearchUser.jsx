@@ -45,31 +45,31 @@ const SearchUser = ({ onClose, onNewGroup }) => {
   const q = search.trim()
 
   return (
-    <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-white'>
+    <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-wa-surface'>
       {/* drawer header */}
-      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white sm:px-6 lg:h-[108px] lg:items-end lg:pb-5'>
+      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white dark:bg-wa-panel dark:text-wa-text sm:px-6 md:h-16 md:bg-wa-surface md:text-wa-strong md:dark:bg-wa-surface md:dark:text-wa-strong'>
         <div className='flex items-center gap-7'>
           <button onClick={onClose} title='Back'>
             <IoArrowBack size={24} />
           </button>
-          <h2 className='text-[19px] font-medium'>New chat</h2>
+          <h2 className='text-[19px] font-medium md:text-[22px] md:font-bold'>New chat</h2>
         </div>
       </header>
 
       {/* search input */}
       <div className='shrink-0 border-b border-wa-border px-3 py-2'>
         <div className='flex h-[38px] items-center gap-4 rounded-lg bg-wa-panel px-4 sm:h-[35px]'>
-          <IoSearchOutline size={17} className='shrink-0 text-[#54656f]' />
+          <IoSearchOutline size={17} className='shrink-0 text-wa-icon' />
           <input
             type='text'
             placeholder='Search contacts, or type a full number / email'
-            className='w-full bg-transparent text-base text-wa-text outline-none placeholder:text-[#8696a0] sm:text-sm'
+            className='w-full bg-transparent text-base text-wa-text outline-none placeholder:text-wa-subtle sm:text-sm'
             onChange={(e) => setSearch(e.target.value)}
             value={search}
             autoFocus
           />
           {search && (
-            <button onClick={() => setSearch("")} className='text-[#54656f]'>
+            <button onClick={() => setSearch("")} className='text-wa-icon'>
               <IoClose size={18} />
             </button>
           )}

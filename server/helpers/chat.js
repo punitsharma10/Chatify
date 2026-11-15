@@ -1,6 +1,7 @@
 const mongoose = require('mongoose')
 const { ConversationModel, MessageModel } = require('../models/conversation.model')
 const presence = require('../socket/presence')
+const { viewEnvelope } = require('./e2ee')
 
 const LIMITS = {
     PAGE_SIZE : 40,
@@ -13,11 +14,16 @@ const LIMITS = {
     MAX_BULK : 100,
     DISAPPEAR_OPTIONS : [0, 24 * 60 * 60, 7 * 24 * 60 * 60, 90 * 24 * 60 * 60],
     MAX_GROUP_MEMBERS : 256,
+    POLL_QUESTION_MAX : 255,
+    POLL_OPTION_MAX : 100,
+    POLL_OPTIONS_MIN : 2,
+    POLL_OPTIONS_MAX : 12,
+    MUTE_OPTIONS : [8 * 60 * 60, 7 * 24 * 60 * 60, 0], // 8 hours, 1 week, always
     GROUP_NAME_MAX : 100,
     GROUP_DESC_MAX : 512
 }
 
-const REPLY_FIELDS = 'text imageUrl videoUrl fileName stickerUrl audioUrl audioDuration msgByUserId deletedForEveryone createdAt'
+const REPLY_FIELDS = 'text imageUrl videoUrl fileName stickerUrl audioUrl audioDuration msgByUserId deletedForEveryone createdAt poll.question contact.name location.lat viewOnce viewOnceKind e2ee e2eeKind'
 
 const isValidId = (id) => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id) && String(new mongoose.Types.ObjectId(id)) === id
 const idOf = (v) => (v && v._id ? String(v._id) : String(v))
@@ -93,7 +99,8 @@ const publicUser = (user, viewer) => {
         about : !blockedMe && visibleTo(u, p.about, viewerId) ? u.about : "",
         lastSeen : !blockedMe && !blockedByMe && visibleTo(u, p.lastSeen, viewerId) ? u.lastSeen : undefined,
         online : presence.isVisiblyOnline(id, viewerId),
-        blockedByMe
+        blockedByMe,
+        ...(u.deletedAt ? { deleted : true, name : 'Deleted account', profileName : 'Deleted account' } : {})
     }
 }
 
@@ -211,10 +218,19 @@ const canSeeMessage = (conv, userId, m) => {
 
 /* ---------------- messages ---------------- */
 
-const serializeReply = (r) => {
+const serializeReply = (r, viewerId) => {
     if (!r) return null
     if (!r.msgByUserId) return { _id : idOf(r) }
     const deleted = !!r.deletedForEveryone
+    // encrypted original: the quote is decrypted on the device (view once media stays hidden)
+    if (r.e2ee && !deleted) {
+        return {
+            _id : r._id, msgByUserId : r.msgByUserId, createdAt : r.createdAt, deleted : false,
+            e2eeKind : r.e2eeKind,
+            ...(r.viewOnce ? { viewOnce : true, viewOnceKind : r.viewOnceKind } : { e2ee : viewEnvelope(r.e2ee, viewerId) }),
+            ...(r.poll?.question ? { pollQuestion : r.poll.question } : {})
+        }
+    }
     return {
         _id : r._id,
         msgByUserId : r.msgByUserId,
@@ -226,6 +242,10 @@ const serializeReply = (r) => {
         stickerUrl : deleted ? "" : r.stickerUrl,
         audioUrl : deleted ? "" : r.audioUrl,
         audioDuration : deleted ? 0 : r.audioDuration,
+        ...(r.poll?.question && !deleted ? { pollQuestion : r.poll.question } : {}),
+        ...(r.contact?.name && !deleted ? { contactName : r.contact.name } : {}),
+        ...(r.location?.lat !== undefined && r.location?.lat !== null && !deleted ? { isLocation : true } : {}),
+        ...(r.viewOnce ? { imageUrl : "", videoUrl : "", viewOnce : true } : {}),
         deleted
     }
 }
@@ -260,8 +280,41 @@ const serializeMessage = (m, viewerId, { receipts = true } = {}) => {
         pinned : !deleted && !!o.pinned,
         starred : (o.starredBy || []).some((id) => String(id) === String(viewerId)),
         reactions : deleted ? [] : (o.reactions || []).map((r) => ({ userId : String(r.userId), emoji : r.emoji })),
-        replyTo : deleted ? null : serializeReply(o.replyTo),
+        replyTo : deleted ? null : serializeReply(o.replyTo, viewerId),
         expiresAt : o.expiresAt
+    }
+
+    if (!deleted) {
+        if (o.mentions?.length) out.mentions = o.mentions.map(String)
+        if (o.poll?.question) {
+            out.poll = {
+                question : o.poll.question,
+                options : o.poll.options || [],
+                multiple : !!o.poll.multiple,
+                votes : (o.poll.votes || []).filter((v) => v.options?.length).map((v) => ({ userId : String(v.userId), options : v.options }))
+            }
+        }
+        if (o.linkPreview?.title) out.linkPreview = o.linkPreview
+        if (o.contact?.name) out.contact = { userId : o.contact.userId ? String(o.contact.userId) : undefined, name : o.contact.name, phone : o.contact.phone || '', email : o.contact.email || '' }
+        if (o.location && o.location.lat !== undefined && o.location.lat !== null) out.location = { lat : o.location.lat, lng : o.location.lng, name : o.location.name || '' }
+        if (o.statusReply?.statusId) {
+            const { e2ee, ...snap } = o.statusReply
+            out.statusReply = e2ee ? { ...snap, e2ee : viewEnvelope(e2ee, viewerId) } : snap
+        }
+        // end-to-end encrypted: the viewer gets the ciphertext and only the wrapped keys for their own devices
+        if (o.e2ee) {
+            out.e2eeKind = o.e2eeKind
+            if (!o.viewOnce) out.e2ee = viewEnvelope(o.e2ee, viewerId)
+        }
+        if (o.silent) out.silent = true
+        // view once: the media address is only handed out by "view-once-open", one time per recipient
+        if (o.viewOnce) {
+            out.viewOnce = o.viewOnceKind || (o.imageUrl ? 'image' : 'video')
+            out.imageUrl = ''
+            out.videoUrl = ''
+            const viewed = (o.viewedBy || []).map(String)
+            out.opened = mine ? viewed.length > 0 : viewed.includes(String(viewerId))
+        }
     }
 
     if (o.call?.media) out.call = { type : o.call.media, status : o.call.status, duration : o.call.duration || 0, ...(o.call.participants !== undefined ? { group : true, participants : o.call.participants } : {}) }

@@ -20,6 +20,7 @@ export const systemText = (msg, myId) => {
     case 'add': return `${actor} added ${targets}`
     case 'remove': return `${actor} removed ${targets}`
     case 'leave': return `${actor} left`
+    case 'join': return `${actor} joined using this group's invite link`
     case 'subject': return `${actor} changed the group name to "${s.value}"`
     case 'description': return s.value === 'removed' ? `${actor} deleted the group description` : `${actor} changed the group description`
     case 'icon': return s.value === 'removed' ? `${actor} deleted this group's icon` : `${actor} changed this group's icon`

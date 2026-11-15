@@ -140,11 +140,11 @@ export const VoiceRecorder = ({ onSend, onCancel, onError }) => {
 
   return (
     <div className='flex min-w-0 flex-1 items-center gap-2'>
-      <button type='button' onClick={() => finish(false)} className='wa-icon-btn text-[#54656f]' title='Delete recording'><IoTrashOutline size={21} /></button>
+      <button type='button' onClick={() => finish(false)} className='wa-icon-btn text-wa-icon' title='Delete recording'><IoTrashOutline size={21} /></button>
       <span className={`h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 ${paused ? '' : 'animate-pulse'}`} />
       <span className='w-11 shrink-0 text-[15px] tabular-nums text-wa-text'>{formatClock(seconds)}</span>
       <div className='flex h-8 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden'>
-        {levels.map((v, i) => <span key={i} className='w-[3px] shrink-0 rounded-full bg-[#8696a0]' style={{ height : `${Math.max(12, v * 100)}%` }} />)}
+        {levels.map((v, i) => <span key={i} className='w-[3px] shrink-0 rounded-full bg-wa-subtle' style={{ height : `${Math.max(12, v * 100)}%` }} />)}
       </div>
       <button type='button' onClick={togglePause} className='wa-icon-btn text-red-500' title={paused ? 'Continue recording' : 'Pause'}>
         {paused ? <IoMic size={22} /> : <IoPause size={20} />}
@@ -222,9 +222,9 @@ export const VoicePlayer = ({ url, duration = 0, waveform, mine, uploading, prog
         onEnded={() => { setPlaying(false); setCurrent(0) }}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
       />
-      <button type='button' onClick={toggle} disabled={uploading} className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#54656f] hover:bg-black/5 disabled:opacity-50' title={playing ? 'Pause' : 'Play'}>
+      <button type='button' onClick={toggle} disabled={uploading} className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-wa-icon hover:bg-black/5 disabled:opacity-50' title={playing ? 'Pause' : 'Play'}>
         {uploading
-          ? <span className='h-6 w-6 animate-spin rounded-full border-2 border-[#8696a0]/30 border-t-[#8696a0]' />
+          ? <span className='h-6 w-6 animate-spin rounded-full border-2 border-wa-subtle/30 border-t-wa-subtle' />
           : playing ? <IoPause size={24} /> : <IoPlay size={24} className='ml-0.5' />}
       </button>
       <div className='min-w-0 flex-1'>
@@ -232,7 +232,7 @@ export const VoicePlayer = ({ url, duration = 0, waveform, mine, uploading, prog
           {bars.map((v, i) => (
             <span
               key={i}
-              className={`w-[3px] flex-1 rounded-full ${i / bars.length < ratio ? (mine ? 'bg-[#06cf9c]' : 'bg-[#4fb6ec]') : 'bg-[#8696a0]/50'}`}
+              className={`w-[3px] flex-1 rounded-full ${i / bars.length < ratio ? (mine ? 'bg-[#06cf9c]' : 'bg-[#4fb6ec]') : 'bg-wa-subtle/50'}`}
               style={{ height : `${Math.max(14, v * 100)}%` }}
             />
           ))}
@@ -242,7 +242,7 @@ export const VoicePlayer = ({ url, duration = 0, waveform, mine, uploading, prog
         </div>
       </div>
       {playing || current ? (
-        <button type='button' onClick={nextSpeed} className='shrink-0 rounded-full bg-[#8696a0]/80 px-2 py-0.5 text-[11px] font-semibold text-white' title='Playback speed'>{speed}×</button>
+        <button type='button' onClick={nextSpeed} className='shrink-0 rounded-full bg-wa-subtle/80 px-2 py-0.5 text-[11px] font-semibold text-white' title='Playback speed'>{speed}×</button>
       ) : (
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${mine ? 'bg-[#06cf9c]/15 text-[#06cf9c]' : played ? 'bg-[#4fb6ec]/15 text-[#4fb6ec]' : 'bg-wa-green/15 text-wa-green'}`}>
           <IoMic size={18} />

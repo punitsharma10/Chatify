@@ -5,6 +5,13 @@
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#00a884" />
+    <script>
+      // apply the saved theme before the app loads so dark mode never flashes white
+      try {
+        var t = localStorage.getItem("chatify-theme") || "light";
+        if (t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)) document.documentElement.classList.add("dark");
+      } catch (e) {}
+    </script>
     <meta
       name="description"
       content="Web site created using create-react-app"

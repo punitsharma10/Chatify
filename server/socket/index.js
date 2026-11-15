@@ -7,6 +7,9 @@ const presence = require('./presence')
 const { corsOrigin } = require('../helpers/allowedOrigins')
 const registerChatHandlers = require('./chatHandlers')
 const registerCallHandlers = require('./callHandlers')
+const registerStatusHandlers = require('./statusHandlers')
+const registerPlannerHandlers = require('./plannerHandlers')
+const registerE2eeHandlers = require('./e2eeHandlers')
 
 const app = express()
 
@@ -38,6 +41,7 @@ io.use(async(socket, next)=>{
         }
         socket.data.userId = user._id.toString()
         socket.data.user = user
+        socket.data.sid = user.$locals?.sid || null
         // new client identifies itself so the server can keep the old event format for older clients
         socket.data.v2 = socket.handshake.auth?.client === 'v2'
         next()
@@ -61,6 +65,9 @@ io.on('connection',(socket)=>{
 
     registerChatHandlers(io, socket, { broadcastOnline })
     registerCallHandlers(io, socket)
+    registerStatusHandlers(io, socket)
+    registerPlannerHandlers(io, socket)
+    registerE2eeHandlers(io, socket)
 
     //disconnect
     socket.on('disconnect',async()=>{
@@ -76,7 +83,21 @@ io.on('connection',(socket)=>{
     })
 })
 
+// a device was logged out: tell its tabs and close their connections
+const disconnectSessions = (sids) => {
+    const set = new Set((sids || []).map(String))
+    if (!set.size) return
+    for (const s of io.sockets.sockets.values()) {
+        if (s.data.sid && set.has(String(s.data.sid))) {
+            s.emit('session-revoked', { reason : 'logged-out' })
+            // let the event reach the tab before the connection closes
+            setTimeout(() => s.disconnect(true), 250)
+        }
+    }
+}
+
 module.exports = {
+    disconnectSessions,
     app,
     server,
     io,

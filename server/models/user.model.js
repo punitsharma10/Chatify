@@ -55,7 +55,35 @@ const userSchema = new mongoose.Schema({
         about : visibility,
         readReceipts : { type : Boolean, default : true },
         // who can add this user to groups
-        groups : { type : String, enum : ['everyone', 'contacts'], default : 'everyone' }
+        groups : { type : String, enum : ['everyone', 'contacts'], default : 'everyone' },
+        // who sees my status updates: my contacts / my contacts except... / only share with...
+        status : { type : String, enum : ['contacts', 'except', 'only'], default : 'contacts' },
+        statusExcept : [{ type : mongoose.Schema.ObjectId, ref : 'User' }],
+        statusOnly : [{ type : mongoose.Schema.ObjectId, ref : 'User' }],
+        // generate previews for links I send
+        linkPreviews : { type : Boolean, default : true }
+    },
+    // set when the account was deleted (the profile is erased; chats keep a "Deleted account" sender)
+    deletedAt : { type : Date },
+    // people whose status updates I muted
+    mutedStatuses : [{ type : mongoose.Schema.ObjectId, ref : 'User' }],
+    // chat lock: hashed secret code that opens "Locked chats"
+    chatLockCode : { type : String, select : false },
+    // end-to-end encryption: one entry per browser/device. Only PUBLIC keys are stored here; private keys never
+    // leave the device. Removed devices are kept (removedAt) so old messages they signed can still be verified.
+    devices : {
+        type : [{
+            id : { type : String, required : true },           // random id created on the device
+            ecdh : { type : String, required : true },         // P-256 ECDH public key (raw, base64)
+            sign : { type : String, required : true },         // P-256 ECDSA public key (raw, base64)
+            name : { type : String, default : '' },            // "Chrome · Windows"
+            sid : { type : String, default : '' },             // session that registered it (remote log out removes it)
+            createdAt : { type : Date },
+            lastSeen : { type : Date },
+            removedAt : { type : Date },
+            _id : false
+        }],
+        default : undefined
     },
     contacts : [contactSchema],
     // existing accounts get the people they already chat with as contacts once (see helpers/migrate.js)

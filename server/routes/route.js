@@ -9,6 +9,9 @@ const SearchUser = require('../controllers/searchUser.controller');
 const requireAuth = require('../helpers/requireAuth');
 const { sendOtp, verifyOtp } = require('../controllers/otp.controller');
 const resetPassword = require('../controllers/resetPassword.controller');
+const { listSessions, revokeSessions } = require('../controllers/sessions.controller');
+const { linkPreview } = require('../controllers/linkPreview.controller');
+const deleteAccount = require('../controllers/deleteAccount.controller');
 
 const router = express.Router();
 
@@ -25,6 +28,14 @@ router.post('/updateuser',requireAuth,updateUserDetails)
 router.get('/userdetails', userDetails)
 router.get('/logout',logout)
 router.post("/searchuser",requireAuth,SearchUser)
+
+// linked devices
+router.get('/sessions', requireAuth, listSessions)
+router.post('/sessions/logout', requireAuth, revokeSessions)
+router.post('/delete-account', requireAuth, deleteAccount)
+
+// link preview for the composer (what the message will look like before sending)
+router.post('/link-preview', requireAuth, linkPreview)
 
 
 module.exports = router

@@ -128,7 +128,7 @@ const Register = () => {
                   )}
                   <div className={`absolute inset-0 flex flex-col items-center justify-center bg-black/40 text-[10px] font-medium uppercase leading-tight text-white transition-opacity ${data.profile_pic && !uploading ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}>
                     {uploading ? (
-                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-wa-surface border-t-transparent" />
                     ) : (
                       <>
                         <IoCamera size={22} />

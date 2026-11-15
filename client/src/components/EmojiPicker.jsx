@@ -70,12 +70,12 @@ const EmojiPicker = ({ onSelect, onClose, className = '', onSticker, onCreateSti
   useOutsideClose(ref, onClose)
 
   return (
-    <div ref={ref} className={`z-40 flex h-[min(420px,60dvh)] w-[min(360px,calc(100vw-16px))] animate-pop flex-col overflow-hidden rounded-xl bg-white shadow-menu ${className}`}>
+    <div ref={ref} className={`z-40 flex h-[min(420px,60dvh)] w-[min(360px,calc(100vw-16px))] animate-pop flex-col overflow-hidden rounded-xl bg-wa-surface shadow-menu ${className}`}>
       {tab === 'emoji' ? <EmojiTab onSelect={onSelect} /> : <StickerTab onSticker={onSticker} onCreateSticker={onCreateSticker} />}
       {onSticker && (
         <div className='flex shrink-0 justify-center gap-2 border-t border-wa-border bg-wa-panel py-1.5'>
           {[['emoji', 'Emoji'], ['stickers', 'Stickers']].map(([k, l]) => (
-            <button key={k} type='button' onClick={() => setTab(k)} className={`rounded-full px-4 py-1 text-sm ${tab === k ? 'bg-white font-medium text-wa-teal shadow-sm' : 'text-wa-muted hover:text-wa-text'}`}>{l}</button>
+            <button key={k} type='button' onClick={() => setTab(k)} className={`rounded-full px-4 py-1 text-sm ${tab === k ? 'bg-wa-surface font-medium text-wa-teal shadow-sm' : 'text-wa-muted hover:text-wa-text'}`}>{l}</button>
           ))}
         </div>
       )}
@@ -144,7 +144,7 @@ const EmojiTab = ({ onSelect }) => {
             type='button'
             title={c.label}
             onClick={() => { setQuery(''); jump(c.id) }}
-            className={`flex h-10 flex-1 items-center justify-center border-b-2 text-lg transition-colors ${active === c.id && !query ? 'border-wa-green text-wa-green' : 'border-transparent text-[#8696a0] grayscale hover:grayscale-0'}`}
+            className={`flex h-10 flex-1 items-center justify-center border-b-2 text-lg transition-colors ${active === c.id && !query ? 'border-wa-green text-wa-green' : 'border-transparent text-wa-subtle grayscale hover:grayscale-0'}`}
           >
             {c.icon}
           </button>
@@ -153,14 +153,14 @@ const EmojiTab = ({ onSelect }) => {
 
       <div className='flex shrink-0 items-center gap-2 px-3 py-2'>
         <div className='flex h-8 flex-1 items-center gap-2 rounded-lg bg-wa-panel px-3'>
-          <IoSearchOutline size={15} className='text-[#54656f]' />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder='Search emoji' className='w-full bg-transparent text-sm text-wa-text outline-none placeholder:text-[#8696a0]' />
-          {query && <button type='button' onClick={() => setQuery('')} className='text-[#54656f]'><IoClose size={15} /></button>}
+          <IoSearchOutline size={15} className='text-wa-icon' />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder='Search emoji' className='w-full bg-transparent text-sm text-wa-text outline-none placeholder:text-wa-subtle' />
+          {query && <button type='button' onClick={() => setQuery('')} className='text-wa-icon'><IoClose size={15} /></button>}
         </div>
         <div className='relative'>
           <button type='button' onClick={() => setToneOpen((o) => !o)} className='flex h-8 w-8 items-center justify-center rounded-md text-xl hover:bg-wa-panel' title='Skin tone'>{withTone(TONE_SAMPLE, tone)}</button>
           {toneOpen && (
-            <div className='absolute right-0 top-9 z-10 flex gap-0.5 rounded-lg bg-white p-1 shadow-menu'>
+            <div className='absolute right-0 top-9 z-10 flex gap-0.5 rounded-lg bg-wa-surface p-1 shadow-menu'>
               {TONES.map((t) => (
                 <button key={t || 'default'} type='button' onClick={() => { setTone(t); save(TONE_KEY, t); setToneOpen(false) }} className={`flex h-8 w-8 items-center justify-center rounded-md text-xl hover:bg-wa-panel ${t === tone ? 'bg-wa-panel' : ''}`}>
                   {withTone(TONE_SAMPLE, t)}
@@ -186,7 +186,7 @@ const EmojiTab = ({ onSelect }) => {
               <h4 className='px-1 pb-1 pt-2 text-xs font-medium text-wa-muted'>Recent</h4>
               {recent.length
                 ? <div className='grid grid-cols-8 gap-0.5'>{recent.map((e) => <Cell key={e} emoji={e} />)}</div>
-                : <p className='px-1 pb-2 text-xs text-[#8696a0]'>Emoji you use will show up here</p>}
+                : <p className='px-1 pb-2 text-xs text-wa-subtle'>Emoji you use will show up here</p>}
             </section>
             {data.map((c) => (
               <section key={c.id} data-section={c.id} style={{ contentVisibility : 'auto', containIntrinsicSize : `auto ${Math.ceil(c.emojis.length / 8) * 42 + 30}px` }}>
@@ -252,8 +252,8 @@ const StickerTab = ({ onSticker, onCreateSticker }) => {
   return (
     <>
       <div className='flex shrink-0 items-center gap-1 border-b border-wa-border px-1'>
-        <button type='button' title='Recent' onClick={() => jump('recent')} className={`flex h-10 flex-1 items-center justify-center border-b-2 ${active === 'recent' ? 'border-wa-green text-wa-green' : 'border-transparent text-[#8696a0]'}`}><IoTimeOutline size={18} /></button>
-        <button type='button' title='My stickers' onClick={() => jump('mine')} className={`flex h-10 flex-1 items-center justify-center border-b-2 text-[#8696a0] ${active === 'mine' ? 'border-wa-green text-wa-green' : 'border-transparent'}`}><IoAdd size={20} /></button>
+        <button type='button' title='Recent' onClick={() => jump('recent')} className={`flex h-10 flex-1 items-center justify-center border-b-2 ${active === 'recent' ? 'border-wa-green text-wa-green' : 'border-transparent text-wa-subtle'}`}><IoTimeOutline size={18} /></button>
+        <button type='button' title='My stickers' onClick={() => jump('mine')} className={`flex h-10 flex-1 items-center justify-center border-b-2 text-wa-subtle ${active === 'mine' ? 'border-wa-green text-wa-green' : 'border-transparent'}`}><IoAdd size={20} /></button>
         {STICKER_PACKS.map((p) => (
           <button key={p.id} type='button' title={p.name} onClick={() => jump(p.id)} className={`flex h-10 flex-1 items-center justify-center border-b-2 text-lg ${active === p.id ? 'border-wa-green' : 'border-transparent grayscale hover:grayscale-0'}`}>{p.icon}</button>
         ))}
@@ -264,7 +264,7 @@ const StickerTab = ({ onSticker, onCreateSticker }) => {
           <h4 className='px-1 pb-1 pt-2 text-xs font-medium text-wa-muted'>Recent</h4>
           {recent.length
             ? <div className='grid grid-cols-4 gap-1'>{recent.map((u) => <Sticker key={u} code={notoCode(u)} url={notoCode(u) ? undefined : u} onClick={() => send(u)} />)}</div>
-            : <p className='px-1 pb-2 text-xs text-[#8696a0]'>Stickers you send will show up here</p>}
+            : <p className='px-1 pb-2 text-xs text-wa-subtle'>Stickers you send will show up here</p>}
         </section>
 
         <section data-section='mine'>
@@ -288,7 +288,7 @@ const StickerTab = ({ onSticker, onCreateSticker }) => {
             </div>
           </section>
         ))}
-        <p className='px-1 pt-3 text-center text-[10px] text-[#8696a0]'>Animated stickers: Noto Emoji by Google, CC BY 4.0</p>
+        <p className='px-1 pt-3 text-center text-[10px] text-wa-subtle'>Animated stickers: Noto Emoji by Google, CC BY 4.0</p>
       </div>
     </>
   )

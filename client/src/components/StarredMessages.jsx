@@ -33,7 +33,7 @@ const StarredMessages = ({ onClose }) => {
       {!items && <div className='py-8'><Loading /></div>}
       {items && items.length === 0 && (
         <div className='flex flex-col items-center px-10 pt-16 text-center'>
-          <span className='flex h-20 w-20 items-center justify-center rounded-full bg-white text-[#8696a0]'><IoStar size={36} /></span>
+          <span className='flex h-20 w-20 items-center justify-center rounded-full bg-wa-surface text-wa-subtle'><IoStar size={36} /></span>
           <p className='mt-5 text-sm text-wa-muted'>Tap and hold (or right-click) any message and choose “Star” to find it here later.</p>
         </div>
       )}
@@ -42,7 +42,7 @@ const StarredMessages = ({ onClose }) => {
         const peerName = names.name(peer)
         const mine = String(message.msgByUserId) === String(me)
         return (
-          <button key={message._id} onClick={() => open(item)} className='block w-full border-b border-wa-border bg-white px-4 py-3 text-left hover:bg-wa-hover'>
+          <button key={message._id} onClick={() => open(item)} className='block w-full border-b border-wa-border bg-wa-surface px-4 py-3 text-left hover:bg-wa-hover'>
             <div className='flex items-center gap-2'>
               <Avatar width={26} height={26} name={peer?.name} imageUrl={peer?.profile_pic} group={!!peer?.isGroup} />
               <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>{peer?.isGroup ? `${mine ? 'You' : author ? names.name(author) : authorName} ▸ ${peerName}` : mine ? `You ▸ ${peerName}` : `${peerName} ▸ You`}</p>
@@ -50,11 +50,13 @@ const StarredMessages = ({ onClose }) => {
             </div>
             <div className='mt-2 flex items-start gap-2 pl-8'>
               {message.imageUrl && <img src={thumbUrl(message.imageUrl, 120)} alt='' className='h-14 w-14 rounded object-cover' />}
-              {message.videoUrl && <img src={videoPoster(message.videoUrl)} alt='' className='h-14 w-14 rounded bg-black object-cover' />}
+              {message.videoUrl && (message.videoUrl.startsWith('blob:')
+                ? <video src={message.videoUrl} muted preload='metadata' className='h-14 w-14 rounded bg-black object-cover' />
+                : <img src={videoPoster(message.videoUrl)} alt='' className='h-14 w-14 rounded bg-black object-cover' />)}
               <p className='line-clamp-3 flex-1 text-sm text-wa-text'>
                 {message.text ? renderFormatted(message.text) : messagePreview(message)}
               </p>
-              <IoStar size={13} className='mt-1 shrink-0 text-[#8696a0]' />
+              <IoStar size={13} className='mt-1 shrink-0 text-wa-subtle' />
             </div>
           </button>
         )

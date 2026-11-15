@@ -1,6 +1,7 @@
 import React, { useRef } from 'react'
 import { BsCheck2, BsCheck2All, BsClock, BsPinAngleFill } from 'react-icons/bs'
-import { IoAlertCircle, IoChevronDown, IoPlay, IoDownloadOutline, IoStar, IoBan } from 'react-icons/io5'
+import { IoAlertCircle, IoChevronDown, IoPlay, IoDownloadOutline, IoStar, IoBan, IoTimeOutline } from 'react-icons/io5'
+import { useE2EEMedia, E2EE_PENDING } from '../helpers/e2ee'
 import { RiShareForwardFill } from 'react-icons/ri'
 import { MdCallMade, MdCallReceived, MdCallMissed } from 'react-icons/md'
 import { IoCall, IoVideocam } from 'react-icons/io5'
@@ -9,6 +10,7 @@ import { formatBubbleTime } from '../helpers/formatTime'
 import { renderFormatted, plainPreview } from '../helpers/formatText'
 import { thumbUrl, videoPoster, formatBytes, fileExtension, downloadMedia } from '../helpers/media'
 import { VoicePlayer, formatClock } from './Voice'
+import { PollCard, ContactCard, LocationCard, LinkPreviewCard, ViewOnceBubble, StatusReplyQuote } from './MessageExtras'
 
 // delivery state of my own message
 export const statusOf = (msg) => {
@@ -19,7 +21,7 @@ export const statusOf = (msg) => {
 }
 
 export const StatusIcon = ({ status, light = false, size = 16 }) => {
-  const grey = light ? 'text-white' : 'text-[#8696a0]'
+  const grey = light ? 'text-white' : 'text-wa-subtle'
   switch (status) {
     case 'uploading':
     case 'sending': return <BsClock size={size - 4} className={grey} title='Sending' />
@@ -37,19 +39,20 @@ export const ReplyQuote = ({ reply, mine, authorName, onClick, compact = false }
     ? 'This message was deleted'
     : reply.text
       ? plainPreview(reply.text)
+      : reply.pollQuestion ? `📊 ${reply.pollQuestion}` : reply.contactName ? `👤 ${reply.contactName}` : reply.isLocation ? '📍 Location' : reply.viewOnce ? '📷 View once'
       : media === 'image' ? '📷 Photo' : media === 'video' ? '🎥 Video' : reply.stickerUrl ? 'Sticker' : reply.audioUrl ? `🎤 Voice message${reply.audioDuration ? ` (${formatClock(reply.audioDuration)})` : ''}` : reply.fileName ? `📄 ${reply.fileName}` : 'Message'
   return (
     <button
       type='button'
       onClick={onClick}
-      className={`flex w-full min-w-0 overflow-hidden rounded-md text-left ${mine ? 'bg-[#d1f4cc]' : 'bg-[#f0f2f5]'} ${compact ? '' : 'mb-1'}`}
+      className={`flex w-full min-w-0 overflow-hidden rounded-md text-left ${mine ? 'bg-wa-quoteOut' : 'bg-wa-panel'} ${compact ? '' : 'mb-1'}`}
     >
       <span className='w-1 shrink-0 bg-[#06cf9c]' />
       <span className='min-w-0 flex-1 px-2 py-1.5'>
         <span className='block truncate text-[13px] font-medium text-[#06cf9c]'>{authorName}</span>
         <span className={`line-clamp-2 text-[13px] text-wa-muted ${reply.deleted ? 'italic' : ''}`}>{label}</span>
       </span>
-      {media === 'image' && <img src={thumbUrl(reply.imageUrl, 120)} alt='' className='h-14 w-14 shrink-0 object-cover' />}
+      {media === 'image' && <img src={reply.imageUrl === E2EE_PENDING ? E2EE_PENDING : thumbUrl(reply.imageUrl, 120)} alt='' className='h-14 w-14 shrink-0 object-cover' />}
       {media === 'video' && <img src={videoPoster(reply.videoUrl)} alt='' className='h-14 w-14 shrink-0 bg-black object-cover' />}
       {!media && reply.stickerUrl && !reply.deleted && <img src={reply.stickerUrl.replace(/\/512\.webp$/, '/emoji.svg')} alt='' className='h-14 w-14 shrink-0 object-contain p-1' />}
     </button>
@@ -59,15 +62,18 @@ export const ReplyQuote = ({ reply, mine, authorName, onClick, compact = false }
 // grey centred notice in group chats ("Alice added Bob")
 export const SystemNotice = ({ text }) => (
   <div className='my-1 flex justify-center px-2'>
-    <span className='max-w-[90%] rounded-lg bg-white/95 px-3 py-1.5 text-center text-[12.5px] leading-[17px] text-[#54656f] shadow-bubble'>{text}</span>
+    <span className='max-w-[90%] rounded-lg bg-wa-surface/95 px-3 py-1.5 text-center text-[12.5px] leading-[17px] text-wa-icon shadow-bubble'>{text}</span>
   </div>
 )
 
 const MessageBubble = ({
-  msg, mine, firstOfGroup, authorNameOf, selectMode, selected, highlighted, searchTerm,
+  msg : rawMsg, mine, firstOfGroup, authorNameOf, selectMode, selected, highlighted, searchTerm,
   onToggleSelect, onOpenMenu, onOpenMedia, onJumpTo, onRetry, onToggleReaction, onQuickReact,
-  authorLabel, authorColor, onCallBack
+  authorLabel, authorColor, onCallBack,
+  myId, onVote, onViewVotes, onOpenViewOnce, onMessageUser, onSaveContact, isSaved, mentionNames, statusOwnerName
 }) => {
+  // end-to-end encrypted media is downloaded and decrypted when the bubble is shown
+  const msg = useE2EEMedia(rawMsg)
   const pressTimer = useRef(null)
   const bubbleRef = useRef(null)
   const deleted = msg.deletedForEveryone
@@ -78,7 +84,8 @@ const MessageBubble = ({
   const hasMedia = !deleted && (hasImage || hasVideo)
   const isSticker = !deleted && !!msg.stickerUrl
   const isVoice = !deleted && !!(msg.audioUrl || msg.kind === 'voice')
-  const mediaOnly = (hasMedia && !msg.text) || isSticker
+  const card = !deleted && !!(msg.poll || msg.contact || msg.location || msg.viewOnce)
+  const mediaOnly = ((hasMedia && !msg.text) || isSticker) && !msg.viewOnce
   const local = !!msg.status
 
   const openMenu = () => {
@@ -107,7 +114,7 @@ const MessageBubble = ({
 
   const meta = (
     <span className={`flex items-center gap-1 whitespace-nowrap text-[11px] leading-none ${mediaOnly ? 'text-white' : 'text-wa-muted'}`}>
-      {msg.starred && <IoStar size={11} className={mediaOnly ? '' : 'text-[#8696a0]'} />}
+      {msg.starred && <IoStar size={11} className={mediaOnly ? '' : 'text-wa-subtle'} />}
       {msg.pinned && <BsPinAngleFill size={11} />}
       {msg.editedAt && !deleted && <span className='italic'>Edited</span>}
       {formatBubbleTime(msg.createdAt)}
@@ -121,7 +128,7 @@ const MessageBubble = ({
       onClick={selectMode ? () => onToggleSelect(msg) : undefined}
     >
       {selectMode && (
-        <span className={`mt-2 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${selected ? 'border-wa-green bg-wa-green text-white' : 'border-[#8696a0] bg-white'}`}>
+        <span className={`mt-2 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 ${selected ? 'border-wa-green bg-wa-green text-white' : 'border-wa-subtle bg-wa-surface'}`}>
           {selected && <BsCheck2 size={14} />}
         </span>
       )}
@@ -135,7 +142,7 @@ const MessageBubble = ({
           onTouchEnd={touchEnd}
           onTouchMove={touchEnd}
           className={`relative max-w-[85%] select-text rounded-lg shadow-bubble transition-[box-shadow,background-color] duration-500 sm:max-w-[75%] lg:max-w-[65%]
-            ${isSticker ? 'bg-transparent !shadow-none' : mine ? 'bg-wa-light' : 'bg-white'}
+            ${isSticker ? 'bg-transparent !shadow-none' : mine ? 'bg-wa-light' : 'bg-wa-surface'}
             ${firstOfGroup && !isSticker ? (mine ? 'rounded-tr-none bubble-tail-out' : 'rounded-tl-none bubble-tail-in') : ''}
             ${isSticker ? 'p-0' : hasMedia ? 'p-1' : 'px-2 pb-2 pt-1.5'}
             ${highlighted ? 'ring-2 ring-[#ffd166] ring-offset-2 ring-offset-transparent' : ''}
@@ -147,7 +154,7 @@ const MessageBubble = ({
             <button
               type='button'
               onClick={(e) => { e.stopPropagation(); openMenu() }}
-              className={`absolute right-1 top-1 z-10 hidden h-6 w-6 items-center justify-center rounded-full text-[#8696a0] opacity-0 transition-opacity group-hover/msg:opacity-100 sm:flex ${mediaOnly ? 'bg-black/30 text-white' : mine ? 'bg-wa-light' : 'bg-white'}`}
+              className={`absolute right-1 top-1 z-10 hidden h-6 w-6 items-center justify-center rounded-full text-wa-subtle opacity-0 transition-opacity group-hover/msg:opacity-100 sm:flex ${mediaOnly ? 'bg-black/30 text-white' : mine ? 'bg-wa-light' : 'bg-wa-surface'}`}
               title='Message options'
             >
               <IoChevronDown size={16} />
@@ -165,6 +172,8 @@ const MessageBubble = ({
             </p>
           )}
 
+          {msg.statusReply && !deleted && <StatusReplyQuote reply={msg.statusReply} ownerName={statusOwnerName ? statusOwnerName(msg.statusReply.ownerId) : ''} />}
+
           {msg.replyTo && !deleted && (
             <div className={hasMedia ? 'mb-1' : ''}>
               <ReplyQuote reply={msg.replyTo} mine={mine} authorName={authorNameOf(msg.replyTo.msgByUserId)} onClick={(e) => { e.stopPropagation(); onJumpTo(msg.replyTo) }} />
@@ -173,6 +182,11 @@ const MessageBubble = ({
 
           {msg.call && !deleted ? (
             <CallEntry call={msg.call} mine={mine} meta={meta} onCallBack={selectMode ? undefined : onCallBack} />
+          ) : msg.e2eeError && !deleted ? (
+            <p className='flex items-center gap-1.5 pr-14 text-[14.2px] italic text-wa-muted' title='End-to-end encrypted'>
+              {msg.e2eeError === 'no-key' ? <IoTimeOutline size={15} className='shrink-0' /> : <IoAlertCircle size={15} className='shrink-0 text-[#e9a23b]' />} {msg.e2eeNotice}
+              <span className='absolute bottom-1.5 right-2'>{meta}</span>
+            </p>
           ) : deleted ? (
             <p className='flex items-center gap-1.5 pr-14 text-[14.2px] italic text-wa-muted'>
               <IoBan size={15} /> {msg.deletedByAdmin ? 'This message was deleted by an admin' : mine ? 'You deleted this message' : 'This message was deleted'}
@@ -180,6 +194,16 @@ const MessageBubble = ({
             </p>
           ) : (
             <>
+              {/* polls, contact cards, locations, view once */}
+              {msg.poll && (
+                <PollCard poll={msg.poll} mine={mine} myId={myId} disabled={selectMode || local || !onVote} onVote={(opts) => onVote(msg, opts)} onViewVotes={() => onViewVotes(msg)} />
+              )}
+              {msg.contact && (
+                <ContactCard contact={msg.contact} myId={myId} onMessage={onMessageUser} onSave={onSaveContact} isSaved={isSaved?.(msg.contact.userId)} />
+              )}
+              {msg.location && <LocationCard location={msg.location} />}
+              {msg.viewOnce && <ViewOnceBubble msg={msg} mine={mine} onOpen={onOpenViewOnce} />}
+
               {/* sticker: no bubble, just the (animated) picture */}
               {isSticker && (
                 <div className='relative'>
@@ -196,25 +220,25 @@ const MessageBubble = ({
                     duration={msg.audioDuration}
                     waveform={msg.audioWaveform}
                     mine={mine}
-                    uploading={msg.status === 'uploading'}
+                    uploading={msg.status === 'uploading' || !!msg.e2eeLoading}
                     progress={msg.progress}
                   />
                   <span className='absolute -bottom-1 right-0'>{meta}</span>
                 </div>
               )}
 
-              {hasImage && (
+              {hasImage && !msg.viewOnce && (
                 <button type='button' onClick={(e) => { e.stopPropagation(); !selectMode && onOpenMedia(msg) }} className='relative block w-full overflow-hidden rounded-md'>
                   <img
                     src={msg.localPreview || thumbUrl(msg.imageUrl, 640)}
                     alt='attachment'
                     loading='lazy'
-                    className='max-h-[260px] min-h-[120px] w-full min-w-[200px] bg-[#e9edef] object-cover sm:max-h-[330px]'
+                    className='max-h-[260px] min-h-[120px] w-full min-w-[200px] bg-wa-raised object-cover sm:max-h-[330px]'
                   />
                   {msg.status === 'uploading' && <UploadOverlay progress={msg.progress} />}
                 </button>
               )}
-              {hasVideo && (
+              {hasVideo && !msg.viewOnce && (
                 <button type='button' onClick={(e) => { e.stopPropagation(); !selectMode && !local && onOpenMedia(msg) }} className='relative block w-full overflow-hidden rounded-md bg-black'>
                   {msg.localPreview ? (
                     <video src={msg.localPreview} muted playsInline preload='metadata' className='max-h-[260px] min-h-[140px] w-full min-w-[220px] object-cover sm:max-h-[330px]' />
@@ -229,7 +253,7 @@ const MessageBubble = ({
                 </button>
               )}
               {hasFile && (
-                <div className={`flex items-center gap-3 rounded-md p-2 ${mine ? 'bg-[#d1f4cc]' : 'bg-[#f5f6f6]'} ${msg.text ? 'mb-1' : 'mb-4'}`}>
+                <div className={`flex items-center gap-3 rounded-md p-2 ${mine ? 'bg-wa-quoteOut' : 'bg-wa-hover'} ${msg.text ? 'mb-1' : 'mb-4'}`}>
                   <span className='flex h-10 w-9 shrink-0 items-center justify-center rounded bg-[#e2564b] text-[10px] font-bold text-white'>
                     {fileExtension(msg.fileName).slice(0, 4)}
                   </span>
@@ -239,8 +263,8 @@ const MessageBubble = ({
                       {msg.status === 'uploading' ? `Uploading… ${msg.progress || 0}%` : `${fileExtension(msg.fileName)}${msg.fileSize ? ` · ${formatBytes(msg.fileSize)}` : ''}`}
                     </p>
                   </div>
-                  {msg.fileUrl && (
-                    <button type='button' onClick={(e) => { e.stopPropagation(); downloadMedia(msg.fileUrl, msg.fileName) }} className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#8696a0]/40 text-[#54656f] hover:bg-black/5' title='Download'>
+                  {msg.fileUrl && !msg.e2eeLoading && (
+                    <button type='button' onClick={(e) => { e.stopPropagation(); downloadMedia(msg.fileUrl, msg.fileName) }} className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-wa-subtle/40 text-wa-icon hover:bg-black/5' title='Download'>
                       <IoDownloadOutline size={18} />
                     </button>
                   )}
@@ -248,13 +272,15 @@ const MessageBubble = ({
               )}
 
               {!isSticker && !isVoice && <div className={`relative ${hasMedia ? (msg.text ? 'px-1.5 pb-1 pt-1' : '') : ''}`}>
+                {msg.linkPreview && msg.text && !hasMedia && <LinkPreviewCard preview={msg.linkPreview} mine={mine} />}
                 {msg.text && (
-                  <span className='whitespace-pre-wrap break-words text-[14.2px] leading-[19px] text-wa-text'>
-                    {renderFormatted(msg.text, searchTerm)}
+                  <span className='chat-text whitespace-pre-wrap break-words text-wa-text'>
+                    {renderFormatted(msg.text, searchTerm, msg.mentions?.length && mentionNames ? mentionNames(msg.mentions) : null)}
                   </span>
                 )}
                 {/* spacer so the time never overlaps the text */}
                 {msg.text && <span className='inline-block' style={{ width : metaWidth }} />}
+                {card && <span className='block h-1' />}
                 <span className={mediaOnly ? 'absolute bottom-1.5 right-1.5 rounded-full bg-black/35 px-1.5 py-1' : 'absolute -bottom-1 right-0'}>
                   {meta}
                 </span>
@@ -270,7 +296,7 @@ const MessageBubble = ({
 
           {/* reactions */}
           {Object.keys(grouped).length > 0 && (
-            <div className={`absolute -bottom-4 z-[5] flex items-center gap-0.5 rounded-full border border-wa-border bg-white px-1.5 py-0.5 text-[13px] shadow-bubble ${mine ? 'right-2' : 'left-2'}`}>
+            <div className={`absolute -bottom-4 z-[5] flex items-center gap-0.5 rounded-full border border-wa-border bg-wa-surface px-1.5 py-0.5 text-[13px] shadow-bubble ${mine ? 'right-2' : 'left-2'}`}>
               {Object.entries(grouped).map(([emoji, users]) => (
                 <button key={emoji} type='button' onClick={(e) => { e.stopPropagation(); onToggleReaction(msg, emoji) }} className='flex items-center leading-none' title='Tap to add or remove'>
                   {emoji}
@@ -286,7 +312,7 @@ const MessageBubble = ({
           <button
             type='button'
             onClick={(e) => { e.stopPropagation(); onQuickReact(msg, e.currentTarget.getBoundingClientRect()) }}
-            className='hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black/5 text-[#54656f] opacity-0 transition-opacity hover:bg-black/10 group-hover/msg:opacity-100 sm:flex'
+            className='hidden h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black/5 text-wa-icon opacity-0 transition-opacity hover:bg-black/10 group-hover/msg:opacity-100 sm:flex'
             title='React'
           >
             <MdOutlineEmojiEmotions size={18} />
@@ -330,7 +356,7 @@ const CallEntry = ({ call, mine, meta, onCallBack }) => {
       className='flex min-w-[210px] items-center gap-3 pb-3 pr-1 pt-1 text-left disabled:cursor-default'
       title={onCallBack ? `${call.type === 'video' ? 'Video' : 'Voice'} call again` : undefined}
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${missed && !mine ? 'bg-red-50 text-red-500' : 'bg-black/5 text-[#54656f]'}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${missed && !mine ? 'bg-red-50 text-red-500' : 'bg-black/5 text-wa-icon'}`}>
         {call.type === 'video' ? <IoVideocam size={19} /> : <IoCall size={18} />}
       </span>
       <span className='min-w-0 flex-1'>

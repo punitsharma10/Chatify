@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { IoClose, IoTimerOutline, IoNotificationsOffOutline, IoTrashOutline, IoExitOutline, IoPencil, IoCheckmark, IoSettingsOutline, IoChevronForward } from 'react-icons/io5'
+import { IoClose, IoTimerOutline, IoNotificationsOffOutline, IoTrashOutline, IoExitOutline, IoPencil, IoCheckmark, IoSettingsOutline, IoChevronForward, IoHeartOutline, IoHeartDislikeOutline, IoShareSocialOutline, IoFlagOutline } from 'react-icons/io5'
 import { MdOutlineCleaningServices, MdOutlineGroupAdd } from 'react-icons/md'
 import Avatar from './Avatar'
 import Dialog from './Dialog'
 import PopoverMenu from './PopoverMenu'
 import { SharedContent, DISAPPEAR_OPTIONS, Row, ActionRow, Toggle } from './ContactInfo'
 import { MemberPicker, GroupIconPicker } from './NewGroup'
+import { EncryptionRow } from './Encryption'
 import { socketCall } from '../helpers/socketCall'
 import { notify, notifyError } from '../helpers/toast'
 import { formatFullDate } from '../helpers/formatTime'
@@ -18,7 +19,8 @@ const SHOW_MEMBERS = 10
 // Right-hand panel for a group: icon, name, description, media, settings, members and admin tools
 const GroupInfo = ({
   socket, group, conversation, onClose, onOpenMedia, onJump, onToggleMute, onSetDisappearing,
-  onClear, onExit, onDelete, onMessageMember
+  onClear, onExit, onDelete, onMessageMember,
+  favorite, onToggleFavorite, onExport, onReport
 }) => {
   const me = useSelector((s) => s.user._id)
   const onlineUser = useSelector((s) => s.user.onlineUser)
@@ -91,7 +93,7 @@ const GroupInfo = ({
 
       <div className='min-h-0 flex-1 overflow-y-auto scrollbar'>
         {/* icon, name, member count */}
-        <section className='flex flex-col items-center bg-white px-6 pb-6 pt-7 shadow-sm'>
+        <section className='flex flex-col items-center bg-wa-surface px-6 pb-6 pt-7 shadow-sm'>
           <GroupIconPicker value={group.avatar} size={160} disabled={!canEdit} onChange={(url) => run('group-update', { avatar : url }, 'Group icon updated')} />
           {canEdit && group.avatar && (
             <button onClick={() => run('group-update', { avatar : '' }, 'Group icon removed')} className='mt-2 text-xs text-wa-muted hover:text-red-600 hover:underline'>Remove icon</button>
@@ -101,24 +103,24 @@ const GroupInfo = ({
           ) : (
             <div className='mt-4 flex max-w-full items-center gap-2'>
               <h3 className='truncate text-center text-2xl text-wa-text'>{group.name}</h3>
-              {canEdit && <button onClick={() => startEdit('name')} className='shrink-0 text-[#8696a0] hover:text-wa-text' title='Edit group name'><IoPencil size={18} /></button>}
+              {canEdit && <button onClick={() => startEdit('name')} className='shrink-0 text-wa-subtle hover:text-wa-text' title='Edit group name'><IoPencil size={18} /></button>}
             </div>
           )}
           <p className='mt-1 text-center text-[15px] text-wa-muted'>Group · {members.length} member{members.length === 1 ? '' : 's'}</p>
         </section>
 
         {!group.isMember && (
-          <p className='mt-2.5 bg-[#fff3c4] px-6 py-3 text-center text-sm text-[#54656f] shadow-sm'>You're no longer a member of this group.</p>
+          <p className='mt-2.5 bg-[#fff3c4] px-6 py-3 text-center text-sm text-wa-icon shadow-sm'>You're no longer a member of this group.</p>
         )}
 
         {/* description */}
-        <section className='mt-2.5 bg-white px-6 py-4 shadow-sm'>
+        <section className='mt-2.5 bg-wa-surface px-6 py-4 shadow-sm'>
           {editing === 'description' ? (
             <EditLine value={draft} onChange={setDraft} onSave={saveEdit} onCancel={() => setEditing(null)} max={512} multiline placeholder='Add group description' />
           ) : group.description ? (
             <div className='flex items-start gap-2'>
               <p className='min-w-0 flex-1 whitespace-pre-wrap break-words text-[15px] text-wa-text'>{renderFormatted(group.description)}</p>
-              {canEdit && <button onClick={() => startEdit('description')} className='shrink-0 text-[#8696a0] hover:text-wa-text' title='Edit description'><IoPencil size={17} /></button>}
+              {canEdit && <button onClick={() => startEdit('description')} className='shrink-0 text-wa-subtle hover:text-wa-text' title='Edit description'><IoPencil size={17} /></button>}
             </div>
           ) : canEdit ? (
             <button onClick={() => startEdit('description')} className='text-[15px] text-wa-green hover:underline'>Add group description</button>
@@ -131,7 +133,8 @@ const GroupInfo = ({
         <SharedContent socket={socket} chatId={group._id} refreshKey={conversation?.disappearAfter} onOpenMedia={onOpenMedia} onJump={onJump} />
 
         {/* chat settings */}
-        <section className='mt-2.5 bg-white py-2 shadow-sm'>
+        <section className='mt-2.5 bg-wa-surface py-2 shadow-sm'>
+          {group.isMember && <EncryptionRow peerId={String(group._id)} name={group.name} group />}
           <Row icon={<IoNotificationsOffOutline size={20} />} label='Mute notifications'>
             <Toggle on={!!conversation?.muted} onChange={onToggleMute} />
           </Row>
@@ -140,7 +143,7 @@ const GroupInfo = ({
               value={conversation?.disappearAfter || 0}
               onChange={(e) => onSetDisappearing(Number(e.target.value))}
               disabled={!canEdit}
-              className='rounded-md border border-wa-border bg-white px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green disabled:opacity-60'
+              className='rounded-md border border-wa-border bg-wa-surface px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green disabled:opacity-60'
             >
               {DISAPPEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -148,9 +151,9 @@ const GroupInfo = ({
           {group.isAdmin && (
             <>
               <button onClick={() => setSettingsOpen((o) => !o)} className='flex w-full items-center gap-4 px-6 py-3 text-left hover:bg-wa-hover'>
-                <span className='text-[#54656f]'><IoSettingsOutline size={20} /></span>
+                <span className='text-wa-icon'><IoSettingsOutline size={20} /></span>
                 <span className='min-w-0 flex-1 text-[15px] text-wa-text'>Group settings</span>
-                <IoChevronForward size={18} className={`text-[#8696a0] transition-transform ${settingsOpen ? 'rotate-90' : ''}`} />
+                <IoChevronForward size={18} className={`text-wa-subtle transition-transform ${settingsOpen ? 'rotate-90' : ''}`} />
               </button>
               {settingsOpen && (
                 <div className='border-t border-wa-border px-6 pb-2 pt-1'>
@@ -164,7 +167,7 @@ const GroupInfo = ({
         </section>
 
         {/* members */}
-        <section className='mt-2.5 bg-white pb-2 shadow-sm'>
+        <section className='mt-2.5 bg-wa-surface pb-2 shadow-sm'>
           <p className='px-6 pb-2 pt-4 text-sm text-wa-muted'>{members.length} member{members.length === 1 ? '' : 's'}</p>
           {canAdd && (
             <button onClick={() => setAdding([])} className='flex w-full items-center gap-4 px-6 py-2.5 text-left hover:bg-wa-hover'>
@@ -190,7 +193,7 @@ const GroupInfo = ({
                   </span>
                   <span className='block truncate text-[13px] text-wa-muted'>{m.about}</span>
                 </span>
-                {m.role === 'admin' && <span className='shrink-0 rounded bg-[#e7fce3] px-1.5 py-0.5 text-[11px] text-[#008069]'>Group admin</span>}
+                {m.role === 'admin' && <span className='shrink-0 rounded bg-wa-chip px-1.5 py-0.5 text-[11px] text-[#008069]'>Group admin</span>}
               </button>
             )
           })}
@@ -201,11 +204,14 @@ const GroupInfo = ({
           )}
         </section>
 
-        <section className='mb-6 mt-2.5 bg-white py-2 shadow-sm'>
+        <section className='mt-2.5 bg-wa-surface pb-3 pt-2'>
+          {onToggleFavorite && <ActionRow icon={favorite ? <IoHeartDislikeOutline size={20} /> : <IoHeartOutline size={20} />} label={favorite ? 'Remove from favourites' : 'Add to favourites'} onClick={onToggleFavorite} />}
+          {onExport && <ActionRow icon={<IoShareSocialOutline size={20} />} label='Export chat' onClick={onExport} />}
           <ActionRow icon={<MdOutlineCleaningServices size={20} />} label='Clear chat' danger onClick={onClear} />
           {group.isMember
             ? <ActionRow icon={<IoExitOutline size={20} />} label='Exit group' danger onClick={onExit} />
             : <ActionRow icon={<IoTrashOutline size={20} />} label='Delete group' danger onClick={onDelete} />}
+          {onReport && <ActionRow icon={<IoFlagOutline size={20} />} label='Report group' danger onClick={onReport} />}
         </section>
       </div>
 
@@ -233,7 +239,7 @@ const GroupInfo = ({
             <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>
               {adding.length ? adding.map((u) => names.name(u)).join(', ') : <span className='text-wa-muted'>Select people to add</span>}
             </p>
-            <button onClick={() => setAdding(null)} className='h-9 rounded-full border border-[#d1d7db] bg-white px-5 text-sm font-medium text-wa-teal hover:bg-wa-hover'>Cancel</button>
+            <button onClick={() => setAdding(null)} className='h-9 rounded-full border border-wa-line bg-wa-surface px-5 text-sm font-medium text-wa-teal hover:bg-wa-hover'>Cancel</button>
             <button onClick={addMembers} disabled={!adding.length} className='flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-wa-green text-white shadow-menu hover:bg-wa-greenDark disabled:opacity-40' title='Add'>
               <IoCheckmark size={24} />
             </button>
@@ -259,12 +265,12 @@ const EditLine = ({ value, onChange, onSave, onCancel, max, multiline = false, p
           maxLength={max}
           rows={multiline ? 3 : undefined}
           placeholder={placeholder}
-          className='w-full resize-none bg-transparent py-1.5 text-base text-wa-text outline-none placeholder:text-[#8696a0]'
+          className='w-full resize-none bg-transparent py-1.5 text-base text-wa-text outline-none placeholder:text-wa-subtle'
           autoFocus
         />
         <span className='pb-2 text-xs text-wa-muted'>{max - value.length}</span>
         <button onClick={onSave} className='pb-1.5 text-wa-green' title='Save'><IoCheckmark size={22} /></button>
-        <button onClick={onCancel} className='pb-1.5 text-[#8696a0]' title='Cancel'><IoClose size={20} /></button>
+        <button onClick={onCancel} className='pb-1.5 text-wa-subtle' title='Cancel'><IoClose size={20} /></button>
       </div>
     </div>
   )
@@ -276,7 +282,7 @@ const SettingRow = ({ label, sub, value, onChange }) => (
       <p className='text-[14.5px] text-wa-text'>{label}</p>
       {sub && <p className='text-xs text-wa-muted'>{sub}</p>}
     </div>
-    <select value={value} onChange={(e) => onChange(e.target.value)} className='rounded-md border border-wa-border bg-white px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className='rounded-md border border-wa-border bg-wa-surface px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'>
       <option value='all'>All members</option>
       <option value='admins'>Only admins</option>
     </select>

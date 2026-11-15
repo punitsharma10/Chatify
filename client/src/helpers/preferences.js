@@ -4,14 +4,16 @@ import { useEffect, useState } from 'react'
 const KEY = 'chatify-wallpaper'
 const EVENT = 'chatify-wallpaper-change'
 
+// solid wallpapers have a light and a dark shade (App.css .wa-wallpaper picks one for the current theme)
+const solid = (light, dark) => ({ className : 'wa-wallpaper', style : { "--wp-light" : light, "--wp-dark" : dark } })
 export const WALLPAPERS = [
   { id : 'doodle', label : 'Default', className : 'wa-chat-bg' },
-  { id : 'plain', label : 'Plain', style : { backgroundColor : '#efeae2' } },
-  { id : 'mint', label : 'Mint', style : { backgroundColor : '#d9f2e6' } },
-  { id : 'sky', label : 'Sky', style : { backgroundColor : '#dbeafe' } },
-  { id : 'blush', label : 'Blush', style : { backgroundColor : '#fbe4e4' } },
-  { id : 'sand', label : 'Sand', style : { backgroundColor : '#f3e7c9' } },
-  { id : 'slate', label : 'Slate', style : { backgroundColor : '#d6dde3' } },
+  { id : 'plain', label : 'Plain', ...solid('#efeae2', '#0b141a') },
+  { id : 'mint', label : 'Mint', ...solid('#d9f2e6', '#0f2b23') },
+  { id : 'sky', label : 'Sky', ...solid('#dbeafe', '#0f2135') },
+  { id : 'blush', label : 'Blush', ...solid('#fbe4e4', '#2e1619') },
+  { id : 'sand', label : 'Sand', ...solid('#f3e7c9', '#2a2415') },
+  { id : 'slate', label : 'Slate', ...solid('#d6dde3', '#1b2329') },
 ]
 
 const read = () => {

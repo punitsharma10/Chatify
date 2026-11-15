@@ -1,5 +1,9 @@
+// themeable colours: values live in CSS variables (src/index.css) so light / dark mode switch at runtime
+const v = (name) => `rgb(var(--wa-${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: "class",
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
@@ -7,18 +11,30 @@ module.exports = {
         primary: "#00a884",
         secondary: "#008069",
         wa: {
-          teal: "#008069",
+          teal: v("teal"),
           green: "#00a884",
           greenDark: "#008f72",
-          light: "#d9fdd3",
-          panel: "#f0f2f5",
-          chat: "#efeae2",
-          text: "#111b21",
-          muted: "#667781",
-          border: "#e9edef",
-          hover: "#f5f6f6",
+          light: v("out"),
+          panel: v("panel"),
+          rail: v("rail"),
+          "rail-active": v("rail-active"),
+          chat: v("chat"),
+          text: v("text"),
+          muted: v("muted"),
+          border: v("border"),
+          hover: v("hover"),
           tick: "#53bdeb",
           badge: "#25d366",
+          surface: v("surface"),
+          icon: v("icon"),
+          subtle: v("subtle"),
+          strong: v("strong"),
+          raised: v("raised"),
+          line: v("line"),
+          quoteOut: v("quote-out"),
+          notice: v("notice"),
+          chip: v("chip"),
+          link: v("link"),
         },
       },
       fontFamily: {

@@ -18,7 +18,7 @@ const IdentifierInput = ({ value, onChange, autoFocus = true, idPrefix = 'id' })
             role='tab'
             aria-selected={value.channel === key}
             onClick={() => set({ channel : key })}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors ${value.channel === key ? 'bg-white font-medium text-wa-teal shadow-sm' : 'text-wa-muted hover:text-wa-text'}`}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm transition-colors ${value.channel === key ? 'bg-wa-surface font-medium text-wa-teal shadow-sm' : 'text-wa-muted hover:text-wa-text'}`}
           >
             {icon} {label}
           </button>

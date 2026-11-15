@@ -10,6 +10,7 @@ const initialState = {
   privacy : {},
   blocked : [],
   contacts : [], // [{ userId, name }] people I saved
+  hasChatLock : false, // a chat lock secret code is set
   token : "",
   onlineUser : [],
   socketConnection : null,
@@ -29,10 +30,14 @@ export const userSlice = createSlice({
         state.about = action.payload.about || ""
         state.privacy = action.payload.privacy || {}
         state.blocked = (action.payload.blocked || []).map(String)
+        if (action.payload.hasChatLock !== undefined) state.hasChatLock = !!action.payload.hasChatLock
         if (action.payload.contacts) state.contacts = action.payload.contacts.map((c) => ({ userId : String(c.userId), name : c.name || '' }))
     },
     setContacts : (state,action)=>{
         state.contacts = action.payload
+    },
+    setHasChatLock : (state,action)=>{
+        state.hasChatLock = !!action.payload
     },
     setBlocked : (state,action)=>{
         state.blocked = action.payload
@@ -50,6 +55,7 @@ export const userSlice = createSlice({
         state.privacy = {}
         state.blocked = []
         state.contacts = []
+        state.hasChatLock = false
         state.token = ""
         state.socketConnection = null
         state.connected = false
@@ -67,6 +73,6 @@ export const userSlice = createSlice({
 })
 
 // Action creators are generated for each case reducer function
-export const { setUser, setBlocked, setContacts, setToken ,logout, setOnlineUser,setSocketConnection, setConnected } = userSlice.actions
+export const { setUser, setHasChatLock, setBlocked, setContacts, setToken ,logout, setOnlineUser,setSocketConnection, setConnected } = userSlice.actions
 
 export default userSlice.reducer

@@ -7,6 +7,7 @@ import Home from "../pages/Home";
 import Message from "../components/Message";
 import AuthLayout from "../layout/AuthLayout";
 import ForgotPassword from "../pages/ForgetPassword";
+import JoinGroup from "../components/JoinGroup";
 
 const router = createBrowserRouter([
 {
@@ -36,6 +37,11 @@ const router = createBrowserRouter([
                 {
                     path : ':userId',
                     element : <Message/>
+                },
+                {
+                    // group invite link
+                    path : 'join/:code',
+                    element : <JoinGroup/>
                 }
             ]
         }

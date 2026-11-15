@@ -38,13 +38,20 @@ const EditUserDetails = ({ onClose, user }) => {
 
   const handleUploadPhoto = async (e) => {
     const file = e.target.files[0]
+    e.target.value = ''
     if (!file) return
+    if (!file.type.startsWith('image/')) return notifyError('Choose a photo')
 
     setUploading(true)
-    const uploadPhoto = await uploadFile(file)
-    setUploading(false)
-
-    setData((preve) => ({ ...preve, profile_pic: uploadPhoto?.url }))
+    try {
+      const uploadPhoto = await uploadFile(file)
+      if (!uploadPhoto?.url) throw new Error('upload failed')
+      setData((preve) => ({ ...preve, profile_pic: uploadPhoto.url }))
+    } catch {
+      notifyError("Couldn't upload the photo. Check your connection and try again.")
+    } finally {
+      setUploading(false)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -73,18 +80,18 @@ const EditUserDetails = ({ onClose, user }) => {
   return (
     <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-wa-panel'>
       {/* drawer header */}
-      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white sm:px-6 lg:h-[108px] lg:items-end lg:pb-5'>
+      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white dark:bg-wa-panel dark:text-wa-text sm:px-6 md:h-16 md:bg-wa-surface md:text-wa-strong md:dark:bg-wa-surface md:dark:text-wa-strong'>
         <div className='flex items-center gap-7'>
           <button onClick={onClose} title='Back'>
             <IoArrowBack size={24} />
           </button>
-          <h2 className='text-[19px] font-medium'>Profile</h2>
+          <h2 className='text-[19px] font-medium md:text-[22px] md:font-bold'>Profile</h2>
         </div>
       </header>
 
       <form className='min-h-0 flex-1 overflow-y-auto scrollbar' onSubmit={handleSubmit}>
         {/* big avatar with change overlay */}
-        <div className='flex justify-center py-6 sm:py-7'>
+        <div className='relative flex justify-center pb-10 pt-6 sm:pt-7'>
           <button type='button' onClick={handleOpenUploadPhoto} className='group relative rounded-full'>
             <Avatar
               width={180}
@@ -98,7 +105,7 @@ const EditUserDetails = ({ onClose, user }) => {
             </span>
             <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center rounded-full bg-black/40 text-xs uppercase leading-snug text-white transition-opacity ${uploading ? "opacity-100" : "opacity-0 lg:group-hover:opacity-100"}`}>
               {uploading ? (
-                <span className='h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent' />
+                <span className='h-8 w-8 animate-spin rounded-full border-2 border-wa-surface border-t-transparent' />
               ) : (
                 <>
                   <IoCamera size={26} />
@@ -107,6 +114,11 @@ const EditUserDetails = ({ onClose, user }) => {
               )}
             </div>
           </button>
+          {data?.profile_pic && !uploading && (
+            <button type='button' onClick={() => setData((preve) => ({ ...preve, profile_pic: '' }))} className='absolute mt-[188px] text-sm font-medium text-red-600 hover:underline'>
+              Remove photo
+            </button>
+          )}
           <input
             type='file'
             id='profile_pic'
@@ -118,7 +130,7 @@ const EditUserDetails = ({ onClose, user }) => {
         </div>
 
         {/* name */}
-        <div className='bg-white px-5 py-4 sm:px-7 shadow-sm'>
+        <div className='bg-wa-surface px-5 py-4 sm:px-7 shadow-sm'>
           <label htmlFor='name' className='text-sm text-wa-teal'>Your name</label>
           <input
             className='wa-input mt-1'
@@ -134,7 +146,7 @@ const EditUserDetails = ({ onClose, user }) => {
         </p>
 
         {/* about */}
-        <div className='bg-white px-5 py-4 shadow-sm sm:px-7'>
+        <div className='bg-wa-surface px-5 py-4 shadow-sm sm:px-7'>
           <label htmlFor='about' className='text-sm text-wa-teal'>About</label>
           <input
             className='wa-input mt-1'
@@ -150,7 +162,7 @@ const EditUserDetails = ({ onClose, user }) => {
 
         {/* phone (read only) */}
         {user?.phone && (
-          <div className='mb-2.5 bg-white px-5 py-4 sm:px-7 shadow-sm'>
+          <div className='mb-2.5 bg-wa-surface px-5 py-4 sm:px-7 shadow-sm'>
             <p className='text-sm text-wa-teal'>Phone</p>
             <p className='mt-2 text-[15px] text-wa-text'>{formatPhone(user.phone)}</p>
           </div>
@@ -158,7 +170,7 @@ const EditUserDetails = ({ onClose, user }) => {
 
         {/* email (read only) */}
         {user?.email && (
-          <div className='bg-white px-5 py-4 sm:px-7 shadow-sm'>
+          <div className='bg-wa-surface px-5 py-4 sm:px-7 shadow-sm'>
             <p className='text-sm text-wa-teal'>Email</p>
             <p className='mt-2 text-[15px] text-wa-text'>{user.email}</p>
           </div>
@@ -168,7 +180,7 @@ const EditUserDetails = ({ onClose, user }) => {
           <button
             type='button'
             onClick={onClose}
-            className='rounded-full border border-wa-border bg-white px-6 py-2.5 text-sm font-medium text-wa-green hover:bg-wa-hover'
+            className='rounded-full border border-wa-border bg-wa-surface px-6 py-2.5 text-sm font-medium text-wa-green hover:bg-wa-hover'
           >
             Cancel
           </button>

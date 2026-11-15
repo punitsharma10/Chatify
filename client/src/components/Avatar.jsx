@@ -36,7 +36,7 @@ const Avatar = ({ userId, name, imageUrl, width, height, group = false }) => {
           className='h-full w-full rounded-full object-cover'
         />
       ) : group ? (
-        <div className='flex h-full w-full items-center justify-center rounded-full bg-[#dfe5e7] text-white'>
+        <div className='flex h-full w-full items-center justify-center rounded-full bg-wa-raised text-white'>
           <HiUserGroup style={{ width : width * 0.58, height : height * 0.58 }} />
         </div>
       ) : avatarName ? (
@@ -54,7 +54,7 @@ const Avatar = ({ userId, name, imageUrl, width, height, group = false }) => {
 
       {isOnline && (
         <span
-          className='absolute bottom-0 right-0 z-10 rounded-full border-2 border-white bg-wa-badge'
+          className='absolute bottom-0 right-0 z-10 rounded-full border-2 border-wa-surface bg-wa-badge'
           style={{ width: dot + "px", height: dot + "px" }}
           title='online'
         />

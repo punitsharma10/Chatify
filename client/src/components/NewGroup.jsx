@@ -68,7 +68,7 @@ export const MemberPicker = ({ selected, onChange, exclude = [], max = MAX_GROUP
       <button key={u._id} onClick={() => toggle(u)} className='flex w-full items-center gap-3 pl-3 pr-4 text-left transition-colors hover:bg-wa-hover'>
         <span className='relative'>
           <Avatar width={46} height={46} name={names.name(u)} imageUrl={u.profile_pic} userId={u._id} />
-          {on && <span className='absolute -bottom-0.5 -right-0.5 z-20 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-wa-green text-white'><BsCheck2 size={12} /></span>}
+          {on && <span className='absolute -bottom-0.5 -right-0.5 z-20 flex h-5 w-5 items-center justify-center rounded-full border-2 border-wa-surface bg-wa-green text-white'><BsCheck2 size={12} /></span>}
         </span>
         <span className='min-w-0 flex-1 border-b border-wa-border py-3'>
           <span className='flex items-baseline gap-2'>
@@ -90,18 +90,18 @@ export const MemberPicker = ({ selected, onChange, exclude = [], max = MAX_GROUP
               <span key={u._id} className='flex max-w-[200px] items-center gap-1.5 rounded-full bg-wa-panel py-0.5 pl-0.5 pr-2 text-sm text-wa-text'>
                 <Avatar width={24} height={24} name={names.name(u)} imageUrl={u.profile_pic} />
                 <span className='truncate'>{names.name(u)}</span>
-                <button onClick={() => toggle(u)} className='shrink-0 text-[#8696a0] hover:text-wa-text' title={`Remove ${names.name(u)}`}><IoClose size={16} /></button>
+                <button onClick={() => toggle(u)} className='shrink-0 text-wa-subtle hover:text-wa-text' title={`Remove ${names.name(u)}`}><IoClose size={16} /></button>
               </span>
             ))}
           </div>
         )}
         <div className='flex items-center gap-3 border-b-2 border-wa-green pb-1'>
-          <IoSearchOutline size={17} className='shrink-0 text-[#54656f]' />
+          <IoSearchOutline size={17} className='shrink-0 text-wa-icon' />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder='Search contacts, or type a full number / email'
-            className='w-full bg-transparent py-1 text-base text-wa-text outline-none placeholder:text-[#8696a0] sm:text-[15px]'
+            className='w-full bg-transparent py-1 text-base text-wa-text outline-none placeholder:text-wa-subtle sm:text-[15px]'
             autoFocus={autoFocus}
           />
         </div>
@@ -152,7 +152,7 @@ export const GroupIconPicker = ({ value, onChange, size = 200, disabled = false 
       <Avatar width={size} height={size} imageUrl={value} group />
       {!disabled && (
         <span className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 text-center text-xs uppercase leading-snug text-white transition-opacity ${uploading || !value ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-          {uploading ? <span className='h-8 w-8 animate-spin rounded-full border-2 border-white border-t-transparent' /> : <><IoCamera size={size > 120 ? 26 : 20} /><span className='mt-1.5 px-4'>{value ? 'Change group icon' : 'Add group icon'}</span></>}
+          {uploading ? <span className='h-8 w-8 animate-spin rounded-full border-2 border-wa-surface border-t-transparent' /> : <><IoCamera size={size > 120 ? 26 : 20} /><span className='mt-1.5 px-4'>{value ? 'Change group icon' : 'Add group icon'}</span></>}
         </span>
       )}
       <input ref={input} type='file' accept='image/*' className='hidden' onChange={pick} />
@@ -184,11 +184,11 @@ const NewGroup = ({ onClose }) => {
   }
 
   return (
-    <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-white'>
-      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white sm:px-6 lg:h-[108px] lg:items-end lg:pb-5'>
+    <div className='absolute inset-0 z-20 flex animate-slideIn flex-col bg-wa-surface'>
+      <header className='flex h-[59px] shrink-0 items-center bg-wa-teal px-4 text-white dark:bg-wa-panel dark:text-wa-text sm:px-6 md:h-16 md:bg-wa-surface md:text-wa-strong md:dark:bg-wa-surface md:dark:text-wa-strong'>
         <div className='flex items-center gap-7'>
           <button onClick={step === 1 ? onClose : () => setStep(1)} title='Back'><IoArrowBack size={24} /></button>
-          <h2 className='text-[19px] font-medium'>{step === 1 ? 'Add group members' : 'New group'}</h2>
+          <h2 className='text-[19px] font-medium md:text-[22px] md:font-bold'>{step === 1 ? 'Add group members' : 'New group'}</h2>
         </div>
       </header>
 
@@ -208,7 +208,7 @@ const NewGroup = ({ onClose }) => {
           <div className='flex justify-center py-7'>
             <GroupIconPicker value={avatar} onChange={setAvatar} size={180} />
           </div>
-          <div className='bg-white px-5 py-5 shadow-sm sm:px-7'>
+          <div className='bg-wa-surface px-5 py-5 shadow-sm sm:px-7'>
             <div className='flex items-end gap-2 border-b-2 border-wa-green'>
               <input
                 value={name}
@@ -216,7 +216,7 @@ const NewGroup = ({ onClose }) => {
                 onKeyDown={(e) => e.key === 'Enter' && create()}
                 maxLength={100}
                 placeholder='Group name'
-                className='w-full bg-transparent py-1.5 text-base text-wa-text outline-none placeholder:text-[#8696a0] sm:text-[16px]'
+                className='w-full bg-transparent py-1.5 text-base text-wa-text outline-none placeholder:text-wa-subtle sm:text-[16px]'
                 autoFocus
               />
               <span className='pb-2 text-xs text-wa-muted'>{100 - name.length}</span>
@@ -227,7 +227,7 @@ const NewGroup = ({ onClose }) => {
           </p>
           <div className='flex justify-center py-4'>
             <button onClick={create} disabled={!name.trim() || creating} className='flex h-[52px] w-[52px] items-center justify-center rounded-full bg-wa-green text-white shadow-menu transition-colors hover:bg-wa-greenDark disabled:opacity-40' title='Create group'>
-              {creating ? <span className='h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent' /> : <IoCheckmark size={26} />}
+              {creating ? <span className='h-5 w-5 animate-spin rounded-full border-2 border-wa-surface border-t-transparent' /> : <IoCheckmark size={26} />}
             </button>
           </div>
         </div>

@@ -4,6 +4,13 @@ const { ConversationModel, MessageModel } = require('../models/conversation.mode
 const getConversation = require('../helpers/getConversation')
 const { getConversationItem } = require('../helpers/getConversation')
 const presence = require('./presence')
+const StatusModel = require('../models/status.model')
+const { canSeeStatus } = require('../helpers/status')
+const { firstLink, fetchPreview } = require('../helpers/linkPreview')
+const bcryptjs = require('bcryptjs')
+const ReportModel = require('../models/report.model')
+const crypto = require('crypto')
+const { cleanEnvelope, viewEnvelope, missingDevices, keysOnlyFor, KINDS : E2EE_KINDS } = require('../helpers/e2ee')
 const {
     LIMITS, REPLY_FIELDS, isValidId, idOf, escapeRegex, isAllowedMediaUrl, isAllowedStickerUrl, hasBlocked, receiptsAllowed, contactOf,
     publicUser, isParticipant, isActiveMember, peerOf, getState, setState, findConversation, getOrCreateConversation,
@@ -51,6 +58,27 @@ const cleanDescription = (text) => {
 
 const SETTING_KEYS = ['editInfo', 'sendMessages', 'addMembers']
 
+const cleanPoll = (poll) => {
+    if (!poll || typeof poll !== 'object') throw new UserError('Invalid poll')
+    const question = typeof poll.question === 'string' ? poll.question.replace(/\s+/g, ' ').trim() : ''
+    if (!question) throw new UserError('Ask a question')
+    if (question.length > LIMITS.POLL_QUESTION_MAX) throw new UserError(`Question is too long (max ${LIMITS.POLL_QUESTION_MAX} characters)`)
+    const options = (Array.isArray(poll.options) ? poll.options : [])
+        .map((o) => (typeof o === 'string' ? o.replace(/\s+/g, ' ').trim() : '')).filter(Boolean)
+    if (options.length < LIMITS.POLL_OPTIONS_MIN) throw new UserError('Add at least 2 options')
+    if (options.length > LIMITS.POLL_OPTIONS_MAX) throw new UserError(`A poll can have up to ${LIMITS.POLL_OPTIONS_MAX} options`)
+    if (options.some((o) => o.length > LIMITS.POLL_OPTION_MAX)) throw new UserError(`Options can be up to ${LIMITS.POLL_OPTION_MAX} characters`)
+    if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw new UserError('Options must be different')
+    return { question, options, multiple : poll.multiple !== false, votes : [] }
+}
+
+const cleanLocation = (loc) => {
+    const lat = Number(loc?.lat), lng = Number(loc?.lng)
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) throw new UserError('Invalid location')
+    const name = typeof loc.name === 'string' ? loc.name.trim().slice(0, 120) : ''
+    return { lat : Math.round(lat * 1e6) / 1e6, lng : Math.round(lng * 1e6) / 1e6, name }
+}
+
 // run async work for many users without opening hundreds of queries at once
 const inBatches = async (items, size, fn) => {
     for (let i = 0; i < items.length; i += size) {
@@ -68,6 +96,8 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
     const on = (event, fn) => {
         socket.on(event, async (...args) => {
             const ack = typeof args[args.length - 1] === 'function' ? args.pop() : null
+            // socket.io sends a missing payload as null; treat it as missing so `= {}` defaults apply
+            args = args.map((x) => (x === null ? undefined : x))
             try {
                 const result = await fn(...args, { hasAck : !!ack })
                 if (ack) ack({ ok : true, ...(result || {}) })
@@ -282,17 +312,44 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         return existing ? { message : serializeMessage(existing, me, { receipts }), duplicate : true } : null
     }
 
-    const replyIdIn = async (conv, replyTo) => {
+    // the quoted message must be in this chat, or ("Reply privately") a group message by the peer or me that I can see
+    const replyIdIn = async (conv, replyTo, peerId) => {
         if (!replyTo) return undefined
         if (!isValidId(String(replyTo))) throw new UserError('Invalid reply')
-        const r = await MessageModel.findOne({ _id : replyTo, conversationId : conv._id }).select('_id createdAt deletedFor').lean()
-        if (!r || !canSeeMessage(conv, me, r)) return undefined
+        const r = await MessageModel.findOne({ _id : replyTo }).select('_id createdAt deletedFor conversationId msgByUserId system').lean()
+        if (!r) return undefined
+        if (String(r.conversationId) === String(conv._id)) return canSeeMessage(conv, me, r) ? r._id : undefined
+        if (!peerId || r.system?.action || ![String(peerId), me].includes(String(r.msgByUserId))) return undefined
+        const source = await ConversationModel.findOne({ _id : r.conversationId, isGroup : true }).select('-messages').lean()
+        if (!source || !canSeeMessage(source, me, r) || !isParticipant(source, peerId)) return undefined
         return r._id
+    }
+
+    // statuses I may reply to: the owner's status, visible to me, still live
+    const statusSnapshot = async (statusId, ownerId) => {
+        if (!isValidId(String(statusId))) throw new UserError('Status not found')
+        const st = await StatusModel.findOne({ _id : statusId, userId : ownerId, expiresAt : { $gt : new Date() } }).lean()
+        const owner = st && await loadUser(ownerId)
+        if (!st || !owner || !canSeeStatus(owner, st, me)) throw new UserError('This status is no longer available')
+        return { statusId : st._id, ownerId : st.userId, kind : st.kind, text : (st.text || st.caption || '').slice(0, 200), mediaUrl : st.mediaUrl || '', background : st.background || '', ...(st.e2ee ? { e2ee : st.e2ee } : {}) }
+    }
+
+    // fetch the preview of the first link in a text message, then update everyone's copy
+    const attachLinkPreview = (author, message, conv) => {
+        if (!message.text || message.forwarded || author?.privacy?.linkPreviews === false) return
+        const url = firstLink(message.text)
+        if (!url) return
+        fetchPreview(url).then(async (preview) => {
+            if (!preview) return
+            await MessageModel.updateOne({ _id : message._id, deletedForEveryone : { $ne : true } }, { $set : { linkPreview : preview } })
+            await emitMessageUpdate(conv, [message._id])
+        }).catch(() => {})
     }
 
     // creates and delivers one message from the current user to `peer`
     const createMessage = async (meUser, peer, content, { clientId, replyTo, forwarded = false } = {}) => {
         const peerId = String(peer._id)
+        if (peer.deletedAt) throw new UserError('This account no longer exists')
         if (hasBlocked(meUser, peerId)) throw new UserError('You blocked this contact. Unblock them to send a message.')
 
         const receipts = receiptsAllowed(meUser, peer)
@@ -310,7 +367,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
             conv.requestFor = undefined
         }
         const isRequestForPeer = String(conv.requestFor || '') === peerId
-        const replyId = await replyIdIn(conv, replyTo)
+        const replyId = await replyIdIn(conv, replyTo, peerId)
 
         // if the recipient blocked me, the message is stored for me only and never delivered (single tick)
         const blockedByPeer = hasBlocked(peer, me)
@@ -344,6 +401,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         // chat lists are refreshed in the background so the sender's ack isn't delayed
         emitSidebar(blockedByPeer ? [me] : [me, peerId]).catch((e) => console.error('[sidebar]', e))
         emitLegacyMessages(conv, blockedByPeer ? [me] : [me, peerId]).catch(() => {})
+        attachLinkPreview(meUser, message, conv)
         return { message : forMe }
     }
 
@@ -357,6 +415,11 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
 
         const replyId = await replyIdIn(conv, replyTo)
         const members = memberIds(conv)
+        if (content.mentions) {
+            const others = new Set(members.filter((id) => id !== me))
+            content.mentions = [...new Set(content.mentions.map(String))].filter((id) => others.has(id))
+            if (!content.mentions.length) delete content.mentions
+        }
 
         const message = new MessageModel({
             conversationId : conv._id,
@@ -382,6 +445,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
             io.to(uid).emit('message-new', { peerId : groupId, message : serializeMessage(message, uid), authorName : meUser.name, author : { _id : me, name : meUser.name, phone : meUser.phone }, isGroup : true })
         }
         emitItems(conv._id, members).catch((e) => console.error('[sidebar]', e))
+        attachLinkPreview(meUser, message, conv)
         return { message : serializeMessage(message, me) }
     }
 
@@ -478,9 +542,56 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         return conv
     }
 
+    // every active device of the recipients (and my other devices) must be able to open the message
+    const checkE2eeKeys = async (env, userIds, { lenient = false } = {}) => {
+        const ids = [...new Set([...userIds.map(String), me])]
+        if (!keysOnlyFor(env, ids)) throw new UserError('Invalid encrypted message')
+        if (lenient) return
+        const users = await UserModel.find({ _id : { $in : ids } }).select('devices deletedAt').lean()
+        if (missingDevices(env, users.filter((u) => !u.deletedAt)).length) throw new UserError('E2EE_KEYS_CHANGED')
+    }
+
+    // an end-to-end encrypted message: the server stores and relays the envelope without being able to read it
+    const sendEncrypted = async (payload, receiverId) => {
+        const env = cleanEnvelope(payload.e2ee, me)
+        if (!env || env.to !== receiverId) throw new UserError('Invalid encrypted message')
+        const kind = E2EE_KINDS.includes(payload.e2eeKind) && !['status', 'preview'].includes(payload.e2eeKind) ? payload.e2eeKind : null
+        if (!kind) throw new UserError('Invalid encrypted message')
+        const content = { text : '', e2ee : env, e2eeKind : kind }
+        if (kind === 'poll') {
+            // only the number of options is visible (votes are counted by option number); the text is encrypted
+            const n = Number(payload.pollMeta?.count)
+            if (!Number.isInteger(n) || n < LIMITS.POLL_OPTIONS_MIN || n > LIMITS.POLL_OPTIONS_MAX) throw new UserError('Invalid poll')
+            content.poll = { question : '🔒', options : Array.from({ length : n }, (_, i) => String(i + 1)), multiple : payload.pollMeta.multiple !== false, votes : [] }
+        }
+        if (payload.viewOnce) {
+            if (!['image', 'video'].includes(kind)) throw new UserError('Only photos and videos can be view once')
+            Object.assign(content, { viewOnce : true, viewOnceKind : kind, viewedBy : [] })
+        }
+        if (Array.isArray(payload.mentions) && payload.mentions.length) content.mentions = payload.mentions.slice(0, 50).map(String).filter(isValidId)
+        if (payload.silent) content.silent = true
+        if (payload.statusId) content.statusReply = await statusSnapshot(payload.statusId, receiverId)
+        const clientId = typeof payload.clientId === 'string' && payload.clientId.length <= 64 ? payload.clientId : undefined
+        const forwarded = payload.forwarded === true
+        const lenient = payload.scheduled === true
+
+        const group = await findGroup(receiverId)
+        if (group) {
+            if (!isParticipant(group, me)) throw new UserError('Group not found')
+            if (memberOf(group, me)) await checkE2eeKeys(env, memberIds(group), { lenient })
+            return createGroupMessage(await loadUser(me), group, content, { clientId, replyTo : payload.replyTo, forwarded })
+        }
+        const [meUser, peer] = await Promise.all([loadUser(me), loadUser(receiverId)])
+        if (!peer) throw new UserError('User not found')
+        await checkE2eeKeys(env, [receiverId], { lenient })
+        delete content.mentions
+        return createMessage(meUser, peer, content, { clientId, replyTo : payload.replyTo, forwarded })
+    }
+
     const sendMessage = async (payload = {}) => {
         const receiverId = String(payload.receiver || '')
         if (!isValidId(receiverId)) throw new UserError('Invalid recipient')
+        if (payload.e2ee) return sendEncrypted(payload, receiverId)
 
         const text = cleanText(payload.text)
         const content = {
@@ -496,6 +607,30 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         }
         if (![content.imageUrl, content.videoUrl, content.fileUrl, content.audioUrl].every(isAllowedMediaUrl)) throw new UserError('Invalid attachment')
         if (!isAllowedStickerUrl(content.stickerUrl)) throw new UserError('Invalid sticker')
+        const EMPTY = { text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "", audioUrl : "", stickerUrl : "" }
+        // polls, contact cards and locations are sent on their own
+        if (payload.poll) Object.assign(content, EMPTY, { poll : cleanPoll(payload.poll) })
+        else if (payload.location) Object.assign(content, EMPTY, { location : cleanLocation(payload.location) })
+        else if (payload.contact) {
+            const cid = String(payload.contact.userId || '')
+            const person = isValidId(cid) ? await UserModel.findById(cid).select('name phone email').lean() : null
+            if (!person) throw new UserError('Contact not found')
+            const saved = contactOf(await loadUser(me), cid)
+            Object.assign(content, EMPTY, { contact : { userId : person._id, name : saved?.name || person.name, phone : person.phone || '', email : person.email || '' } })
+        }
+        if (payload.viewOnce) {
+            if (!content.imageUrl && !content.videoUrl) throw new UserError('Only photos and videos can be view once')
+            Object.assign(content, { viewOnce : true, viewedBy : [], fileUrl : "", fileName : "", fileSize : 0, fileType : "" })
+        }
+        if (Array.isArray(payload.mentions) && payload.mentions.length) {
+            content.mentions = payload.mentions.slice(0, 50).map(String).filter(isValidId)
+        }
+        // silent: delivered without a sound or notification (Telegram-style)
+        if (payload.silent) content.silent = true
+        if (payload.statusId) {
+            if (content.poll || content.location || content.contact) throw new UserError('Invalid reply')
+            content.statusReply = await statusSnapshot(payload.statusId, receiverId)
+        }
         if (content.stickerUrl) {
             // a sticker is sent on its own, like WhatsApp
             Object.assign(content, { text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "", audioUrl : "" })
@@ -508,7 +643,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
             content.audioWaveform = wave.map((v) => Math.round(Math.min(1, Math.max(0, Number(v) || 0)) * 100) / 100)
             Object.assign(content, { text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "" })
         }
-        if (!content.text && !content.imageUrl && !content.videoUrl && !content.fileUrl && !content.stickerUrl && !content.audioUrl) throw new UserError('Message is empty')
+        if (!content.text && !content.imageUrl && !content.videoUrl && !content.fileUrl && !content.stickerUrl && !content.audioUrl && !content.poll && !content.contact && !content.location) throw new UserError('Message is empty')
         if (content.fileUrl && !content.fileName) content.fileName = 'Document'
 
         const clientId = typeof payload.clientId === 'string' && payload.clientId.length <= 64 ? payload.clientId : undefined
@@ -521,6 +656,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
 
         const [meUser, peer] = await Promise.all([loadUser(me), loadUser(receiverId)])
         if (!peer) throw new UserError('User not found')
+        delete content.mentions
 
         return createMessage(meUser, peer, content, { clientId, replyTo : payload.replyTo })
     }
@@ -603,7 +739,8 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
                     disappearAfter : group.disappearAfter || 0,
                     muted : !!state.muted,
                     archived : !!state.archived,
-                    pinned : !!state.pinned
+                    pinned : !!state.pinned,
+                    note : state.note || ''
                 }
             }
         }
@@ -643,6 +780,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
                 muted : !!state.muted,
                 archived : !!state.archived,
                 pinned : !!state.pinned,
+                note : state.note || '',
                 request : String(conv.requestFor || '') === me
             }
         }
@@ -711,14 +849,32 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         socket.emit('conversation', await getConversation(me))
     })
 
-    on('edit-message', async ({ messageId, text } = {}) => {
+    on('edit-message', async ({ messageId, text, e2ee, e2eeKind } = {}) => {
         const [id] = validIds([messageId])
         const { msgs, convs } = await getOwnedContext([id], { write : true })
         const msg = msgs[0]
+        if (msg.e2ee || e2ee) {
+            // encrypted: the device sends a new envelope for the same people
+            if (String(msg.msgByUserId) !== me) throw new UserError('You can only edit your own messages')
+            if (msg.deletedForEveryone) throw new UserError('This message was deleted')
+            if (msg.forwarded) throw new UserError('Forwarded messages cannot be edited')
+            if (!msg.e2ee || !e2ee) throw new UserError('This message cannot be edited')
+            if (!['text', 'link', 'image', 'video', 'file'].includes(msg.e2eeKind) || msg.viewOnce) throw new UserError('This message cannot be edited')
+            if (Date.now() - new Date(msg.createdAt).getTime() > LIMITS.EDIT_WINDOW_MS) throw new UserError('Messages can only be edited within 15 minutes')
+            const env = cleanEnvelope(e2ee, me)
+            if (!env || env.to !== msg.e2ee.to) throw new UserError('Invalid encrypted message')
+            await checkE2eeKeys(env, isGroup(convs[0]) ? memberIds(convs[0]) : participants(convs[0]))
+            const kind = ['text', 'link'].includes(msg.e2eeKind) && ['text', 'link'].includes(e2eeKind) ? e2eeKind : msg.e2eeKind
+            await MessageModel.updateOne({ _id : id }, { $set : { e2ee : env, e2eeKind : kind, editedAt : new Date() } })
+            await emitMessageUpdate(convs[0], [id])
+            refreshLists(convs[0], participants(convs[0]))
+            return {}
+        }
         if (String(msg.msgByUserId) !== me || msg.system?.action || msg.call?.media) throw new UserError('You can only edit your own messages')
         if (msg.deletedForEveryone) throw new UserError('This message was deleted')
         if (msg.forwarded) throw new UserError('Forwarded messages cannot be edited')
         if (msg.stickerUrl || msg.audioUrl) throw new UserError('Stickers and voice messages cannot be edited')
+        if (msg.poll?.question || msg.contact?.name || msg.location?.lat !== undefined || msg.viewOnce) throw new UserError('This message cannot be edited')
         if (Date.now() - new Date(msg.createdAt).getTime() > LIMITS.EDIT_WINDOW_MS) throw new UserError('Messages can only be edited within 15 minutes')
         const newText = cleanText(text)
         const hasMedia = msg.imageUrl || msg.videoUrl || msg.fileUrl
@@ -752,7 +908,8 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
                     text : "", imageUrl : "", videoUrl : "", fileUrl : "", fileName : "", fileSize : 0, fileType : "",
                     stickerUrl : "", audioUrl : "", audioDuration : 0, audioWaveform : [],
                     reactions : [], pinned : false
-                }
+                },
+                $unset : { poll : 1, contact : 1, location : 1, linkPreview : 1, mentions : 1, statusReply : 1, e2ee : 1 }
             })
             if (byAdmin.length) await MessageModel.updateMany({ _id : { $in : byAdmin } }, { $set : { deletedByAdmin : true } })
             await emitMessageUpdate(conv, ids)
@@ -832,6 +989,8 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         if (msgs.some((m) => m.deletedForEveryone)) throw new UserError('Deleted messages cannot be forwarded')
         if (msgs.some((m) => m.system?.action)) throw new UserError("Group notices can't be forwarded")
         if (msgs.some((m) => m.call?.media)) throw new UserError("Calls can't be forwarded")
+        if (msgs.some((m) => m.viewOnce)) throw new UserError("View once messages can't be forwarded")
+        if (msgs.some((m) => m.e2ee)) throw new UserError('Encrypted messages are forwarded from your device')
         msgs.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
 
         const meUser = await loadUser(me)
@@ -847,7 +1006,11 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
             text : m.text, imageUrl : m.imageUrl, videoUrl : m.videoUrl,
             fileUrl : m.fileUrl, fileName : m.fileName, fileSize : m.fileSize, fileType : m.fileType,
             stickerUrl : m.stickerUrl || "", audioUrl : m.audioUrl || "", audioDuration : m.audioDuration || 0,
-            ...(m.audioWaveform ? { audioWaveform : m.audioWaveform } : {})
+            ...(m.audioWaveform ? { audioWaveform : m.audioWaveform } : {}),
+            ...(m.poll?.question ? { poll : { question : m.poll.question, options : m.poll.options, multiple : m.poll.multiple, votes : [] } } : {}),
+            ...(m.contact?.name ? { contact : m.contact } : {}),
+            ...(m.location?.lat !== undefined && m.location?.lat !== null ? { location : m.location } : {}),
+            ...(m.linkPreview?.title ? { linkPreview : m.linkPreview } : {})
         })
         for (const target of [...peers.map((p) => ({ peer : p })), ...groups.map((g) => ({ group : g }))]) {
             try {
@@ -940,9 +1103,9 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         const { conv } = await resolveChat(peerId)
         const base = { ...visibleFilter(conv, me), deletedForEveryone : { $ne : true } }
         const [media, docs, links] = await Promise.all([
-            MessageModel.find({ ...base, $and : [{ $or : [{ imageUrl : { $nin : ['', null] } }, { videoUrl : { $nin : ['', null] } }] }] }).sort({ createdAt : -1 }).limit(300).lean(),
-            MessageModel.find({ ...base, fileUrl : { $nin : ['', null] } }).sort({ createdAt : -1 }).limit(200).lean(),
-            MessageModel.find({ ...base, text : /https?:\/\/\S+/i }).sort({ createdAt : -1 }).limit(200).lean()
+            MessageModel.find({ ...base, viewOnce : { $ne : true }, $and : [{ $or : [{ imageUrl : { $nin : ['', null] } }, { videoUrl : { $nin : ['', null] } }, { e2eeKind : { $in : ['image', 'video'] } }] }] }).sort({ createdAt : -1 }).limit(300).lean(),
+            MessageModel.find({ ...base, $or : [{ fileUrl : { $nin : ['', null] } }, { e2eeKind : 'file' }] }).sort({ createdAt : -1 }).limit(200).lean(),
+            MessageModel.find({ ...base, $or : [{ text : /https?:\/\/\S+/i }, { e2eeKind : 'link' }] }).sort({ createdAt : -1 }).limit(200).lean()
         ])
         const ser = (m) => serializeMessage(m, me, { receipts : false })
         return { media : media.map(ser), docs : docs.map(ser), links : links.map(ser) }
@@ -992,7 +1155,7 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
     })
 
     // per-user chat list actions; none of these affect the other participants
-    on('chat-action', async ({ peerId, action } = {}) => {
+    on('chat-action', async ({ peerId, action, seconds } = {}) => {
         const { conv, group } = await resolveChat(peerId)
         const now = new Date()
         switch (action) {
@@ -1008,8 +1171,23 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
                 break
             }
             case 'unpin': await setState(conv._id, meId, { pinned : false }); break
-            case 'mute': await setState(conv._id, meId, { muted : true }); break
-            case 'unmute': await setState(conv._id, meId, { muted : false }); break
+            case 'mute': {
+                // 8 hours, 1 week or always (0), like WhatsApp
+                const value = seconds === undefined ? 0 : Number(seconds)
+                if (!LIMITS.MUTE_OPTIONS.includes(value)) throw new UserError('Invalid mute duration')
+                await setState(conv._id, meId, { muted : true, mutedUntil : value ? new Date(Date.now() + value * 1000) : null })
+                break
+            }
+            case 'unmute': await setState(conv._id, meId, { muted : false, mutedUntil : null }); break
+            case 'favorite': await setState(conv._id, meId, { favorite : true }); break
+            case 'unfavorite': await setState(conv._id, meId, { favorite : false }); break
+            case 'lock': {
+                const u = await UserModel.findById(me).select('+chatLockCode').lean()
+                if (!u?.chatLockCode) throw new UserError('Set a secret code for locked chats first')
+                await setState(conv._id, meId, { locked : true, archived : false, pinned : false })
+                break
+            }
+            case 'unlock': await setState(conv._id, meId, { locked : false }); break
             case 'mark-unread': await setState(conv._id, meId, { markedUnread : true }); break
             case 'accept':
                 if (String(conv.requestFor || '') === me) {
@@ -1334,6 +1512,218 @@ module.exports = function registerChatHandlers(io, socket, { broadcastOnline }) 
         if (set['settings.editInfo']) await addSystemMessage(conv, 'settings', { value : `editInfo:${set['settings.editInfo']}` })
         await emitGroupUpdated(conv._id)
         emitItems(conv._id, memberIds(conv)).catch((e) => console.error('[sidebar]', e))
+        return {}
+    })
+
+    /* ---------- private notes ---------- */
+
+    // a note about a chat that only I can see (e.g. "owes me ₹500", "call back after exams")
+    on('chat-note', async ({ peerId, note } = {}) => {
+        const { conv } = await resolveChat(peerId, { create : true })
+        if (note !== '' && typeof note !== 'string') throw new UserError('Invalid note')
+        const text = note.trim()
+        if (text.length > 2000) throw new UserError('Notes can be up to 2000 characters')
+        await setState(conv._id, meId, { note : text })
+        io.to(me).emit('chat-note', { peerId : String(peerId), note : text })
+        return { note : text }
+    })
+
+    /* ---------- polls ---------- */
+
+    // choose poll options (an empty list removes my vote); single-answer polls take one option
+    on('poll-vote', async ({ messageId, options } = {}) => {
+        const [id] = validIds([messageId])
+        const { msgs, convs } = await getOwnedContext([id], { write : true })
+        const msg = msgs[0]
+        if (!msg.poll?.question || msg.deletedForEveryone) throw new UserError('This poll is no longer available')
+        const picks = [...new Set((Array.isArray(options) ? options : []).map(Number))]
+        if (!picks.every((i) => Number.isInteger(i) && i >= 0 && i < msg.poll.options.length)) throw new UserError('Invalid option')
+        if (!msg.poll.multiple && picks.length > 1) throw new UserError('Choose one option')
+        await MessageModel.updateOne({ _id : id }, { $pull : { 'poll.votes' : { userId : meId } } })
+        if (picks.length) await MessageModel.updateOne({ _id : id }, { $push : { 'poll.votes' : { userId : meId, options : picks.sort((a, b) => a - b), at : new Date() } } })
+        await emitMessageUpdate(convs[0], [id])
+        return {}
+    })
+
+    /* ---------- view once ---------- */
+
+    // a recipient opens a view once photo / video: the address is handed out one time only
+    on('view-once-open', async ({ messageId } = {}) => {
+        const [id] = validIds([messageId])
+        const { msgs, convs } = await getOwnedContext([id])
+        const msg = msgs[0]
+        if (!msg.viewOnce || msg.deletedForEveryone) throw new UserError('This message is no longer available')
+        if (String(msg.msgByUserId) === me) throw new UserError('You sent this view once message')
+        const res = await MessageModel.updateOne({ _id : id, viewedBy : { $ne : meId } }, { $push : { viewedBy : meId } })
+        if (!res.modifiedCount) throw new UserError('You already opened this')
+        await emitMessageUpdate(convs[0], [id])
+        if (msg.e2ee) return { kind : msg.viewOnceKind, e2ee : viewEnvelope(msg.e2ee, me) }
+        return { url : msg.imageUrl || msg.videoUrl, kind : msg.imageUrl ? 'image' : 'video' }
+    })
+
+    /* ---------- chat lock ---------- */
+
+    const cleanCode = (code) => {
+        if (typeof code !== 'string' || !/^\S{4,16}$/.test(code)) throw new UserError('Use 4 to 16 characters without spaces')
+        return code
+    }
+    const checkCode = async (code) => {
+        const u = await UserModel.findById(me).select('+chatLockCode').lean()
+        if (!u?.chatLockCode) throw new UserError('No secret code is set')
+        if (typeof code !== 'string' || !(await bcryptjs.compare(code, u.chatLockCode))) throw new UserError('Incorrect secret code')
+    }
+
+    // set or change the secret code that opens "Locked chats"
+    on('chat-lock-set', async ({ code, current } = {}) => {
+        const u = await UserModel.findById(me).select('+chatLockCode').lean()
+        if (u?.chatLockCode) await checkCode(current)
+        const hash = await bcryptjs.hash(cleanCode(code), 10)
+        await UserModel.updateOne({ _id : meId }, { $set : { chatLockCode : hash } })
+        io.to(me).emit('chat-lock-changed', { hasCode : true })
+        return {}
+    })
+
+    on('chat-lock-verify', async ({ code } = {}) => {
+        await checkCode(code)
+        return {}
+    })
+
+    // remove the code: every locked chat goes back to the normal list
+    on('chat-lock-remove', async ({ code } = {}) => {
+        await checkCode(code)
+        await UserModel.updateOne({ _id : meId }, { $unset : { chatLockCode : 1 } })
+        await ConversationModel.updateMany({ userState : { $elemMatch : { userId : meId, locked : true } } }, { $set : { 'userState.$[s].locked' : false } }, { arrayFilters : [{ 's.userId' : meId }] })
+        io.to(me).emit('chat-lock-changed', { hasCode : false })
+        socket.emit('conversation', await getConversation(me))
+        emitSidebar([me]).catch(() => {})
+        return {}
+    })
+
+    /* ---------- group invite links ---------- */
+
+    const newInviteCode = () => crypto.randomBytes(16).toString('base64url')
+    const canShareInvite = (conv) => isAdmin(conv, me) || allowed(conv, me, 'addMembers')
+
+    // get (or reset) the group's invite link
+    on('group-invite-link', async ({ groupId, reset } = {}) => {
+        const conv = await requireGroup(groupId)
+        if (!canShareInvite(conv)) throw new UserError('Only admins can share the invite link')
+        if (reset && !isAdmin(conv, me)) throw new UserError('Only admins can reset the invite link')
+        let code = conv.inviteCode
+        if (!code || reset) {
+            code = newInviteCode()
+            await ConversationModel.updateOne({ _id : conv._id }, { $set : { inviteCode : code } })
+        }
+        return { code }
+    })
+
+    const groupByInvite = async (code) => {
+        if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{16,40}$/.test(code)) throw new UserError('This invite link is invalid')
+        const conv = await ConversationModel.findOne({ inviteCode : code, isGroup : true }).select('-messages').lean()
+        if (!conv) throw new UserError('This invite link was reset or is no longer valid')
+        return conv
+    }
+
+    // what the link opens: group name, icon, size, description
+    on('group-invite-info', async ({ code } = {}) => {
+        const conv = await groupByInvite(code)
+        return {
+            group : {
+                _id : conv._id, name : conv.name, avatar : conv.avatar || '', description : conv.description || '',
+                memberCount : (conv.members || []).length, isMember : !!memberOf(conv, me)
+            }
+        }
+    })
+
+    on('group-join', async ({ code } = {}) => {
+        const conv = await groupByInvite(code)
+        if (memberOf(conv, me)) return { groupId : String(conv._id), already : true }
+        if ((conv.members || []).length >= LIMITS.MAX_GROUP_MEMBERS) throw new UserError(`This group is full (max ${LIMITS.MAX_GROUP_MEMBERS} members)`)
+        const now = new Date()
+        await ConversationModel.updateOne({ _id : conv._id }, { $pull : { pastMembers : { userId : meId }, userState : { userId : meId } } })
+        await ConversationModel.updateOne({ _id : conv._id, 'members.userId' : { $ne : meId } }, { $push : { members : { userId : meId, role : 'member', joinedAt : now } } })
+        const updated = await findGroup(conv._id)
+        await addSystemMessage(updated, 'join')
+        await emitGroupUpdated(conv._id)
+        await emitItems(conv._id, everyoneIn(updated))
+        return { groupId : String(conv._id) }
+    })
+
+    /* ---------- calls tab ---------- */
+
+    // recent calls across all my chats, newest first
+    on('call-history', async () => {
+        const convs = await ConversationModel.find(chatsOf(me)).select('-messages').lean()
+        const docs = await MessageModel.find({
+            conversationId : { $in : convs.map((c) => c._id) },
+            'call.media' : { $exists : true },
+            deletedFor : { $ne : meId }
+        }).sort({ createdAt : -1 }).limit(100).lean()
+        const { convById, describe } = await resultContext(convs, docs)
+        return { calls : docs.filter((d) => canSeeMessage(convById[String(d.conversationId)], me, d)).map(describe) }
+    })
+
+    /* ---------- export chat ---------- */
+
+    // the whole visible chat as plain text ("Export chat"), oldest first
+    on('export-chat', async ({ peerId } = {}) => {
+        const ctx = await resolveChat(peerId)
+        const meUser = await loadUser(me)
+        const docs = await MessageModel.find(visibleFilter(ctx.conv, me)).sort({ createdAt : 1 }).limit(20000).lean()
+        const ids = [...new Set(docs.map((d) => String(d.msgByUserId)))]
+        const users = await UserModel.find({ _id : { $in : ids } }).select('name contacts').lean()
+        const nameOf = (id) => {
+            if (String(id) === me) return meUser.name
+            const saved = contactOf(meUser, id)
+            return saved?.name || users.find((u) => String(u._id) === String(id))?.name || 'Former member'
+        }
+        const line = (d) => {
+            if (d.system?.action) return null
+            let body = d.deletedForEveryone ? 'This message was deleted'
+                : d.poll?.question ? `POLL: ${d.poll.question}\n${d.poll.options.map((o) => `OPTION: ${o}`).join('\n')}`
+                : d.contact?.name ? `Contact card: ${d.contact.name}${d.contact.phone ? ` (${d.contact.phone})` : ''}`
+                : d.location?.lat !== undefined && d.location?.lat !== null ? `Location: https://www.openstreetmap.org/?mlat=${d.location.lat}&mlon=${d.location.lng}`
+                : d.call?.media ? `${d.call.media === 'video' ? 'Video' : 'Voice'} call (${d.call.status})`
+                : [d.viewOnce ? '<View once media omitted>' : d.imageUrl ? '<Photo omitted>' : d.videoUrl ? '<Video omitted>' : d.audioUrl ? '<Voice message omitted>' : d.stickerUrl ? '<Sticker omitted>' : d.fileUrl ? `<Document: ${d.fileName}>` : '', d.text].filter(Boolean).join(' ')
+            if (d.editedAt && !d.deletedForEveryone) body += ' <This message was edited>'
+            const t = new Date(d.createdAt)
+            const pad = (n) => String(n).padStart(2, '0')
+            return `${pad(t.getDate())}/${pad(t.getMonth() + 1)}/${t.getFullYear()}, ${pad(t.getHours())}:${pad(t.getMinutes())} - ${nameOf(d.msgByUserId)}: ${body}`
+        }
+        const encrypted = docs.some((d) => d.e2ee && !d.deletedForEveryone)
+        if (!encrypted) return { text : docs.map(line).filter(Boolean).join('\n'), count : docs.length }
+        // the device fills in what encrypted messages say
+        const items = docs.filter((d) => !d.system?.action).map((d) => {
+            const head = line({ ...d, text : '', e2ee : undefined }).replace(/: .*$/s, '')
+            return d.e2ee && !d.deletedForEveryone
+                ? { head, msgByUserId : d.msgByUserId, e2ee : viewEnvelope(d.e2ee, me), e2eeKind : d.e2eeKind, edited : !!d.editedAt, ...(d.viewOnce ? { viewOnce : true } : {}) }
+                : { head, body : line(d).slice(head.length + 2) }
+        })
+        return { items, count : docs.length }
+    })
+
+    /* ---------- report ---------- */
+
+    // report a contact or group; optionally block them / exit the group too (like WhatsApp)
+    on('report', async ({ peerId, reason, block } = {}) => {
+        const ctx = await resolveChat(peerId, { required : false })
+        const r = typeof reason === 'string' ? reason.trim().slice(0, 500) : ''
+        const lastMsgs = ctx.conv
+            ? await MessageModel.find({ ...visibleFilter(ctx.conv, me), msgByUserId : { $ne : meId } }).sort({ createdAt : -1 }).limit(5).select('_id').lean()
+            : []
+        await ReportModel.create({
+            reporter : meId,
+            ...(ctx.group ? { targetGroup : ctx.conv._id } : { targetUser : String(peerId) }),
+            reason : r,
+            messages : lastMsgs.map((m) => m._id)
+        })
+        if (block && !ctx.group && String(peerId) !== me) {
+            const updated = await UserModel.findByIdAndUpdate(me, { $addToSet : { blocked : oid(peerId) } }, { new : true }).select('-password').lean()
+            presence.update(updated)
+            broadcastOnline()
+            emitSidebar([me, String(peerId)]).catch(() => {})
+            return { blocked : (updated.blocked || []).map(String) }
+        }
         return {}
     })
 }

@@ -4,6 +4,7 @@ import { socketCall } from '../helpers/socketCall'
 import { formatListTime } from '../helpers/formatTime'
 import { renderFormatted } from '../helpers/formatText'
 import Loading from './Loading'
+import { searchLocal } from '../helpers/e2ee'
 
 // "Search messages" panel for one conversation
 const ChatSearch = ({ socket, peerId, peerName, myId, onClose, onSelect, onTermChange }) => {
@@ -17,8 +18,12 @@ const ChatSearch = ({ socket, peerId, peerName, myId, onClose, onSelect, onTermC
     if (!term) { setResults([]); return }
     setLoading(true)
     const t = setTimeout(async () => {
-      const res = await socketCall(socket, 'search-messages', { peerId, q : term })
-      setResults(res.ok ? res.results : [])
+      // plain messages are searched on the server, end-to-end encrypted ones on this device
+      const [res, local] = await Promise.all([socketCall(socket, 'search-messages', { peerId, q : term }), searchLocal(term, peerId)])
+      const server = res.ok ? res.results : []
+      const seen = new Set(server.map((r) => String(r.message._id)))
+      const mine = local.filter((r) => !seen.has(r.id)).map((r) => ({ message : { _id : r.id, text : r.text, createdAt : r.at, msgByUserId : r.from } }))
+      setResults([...server, ...mine].sort((a, b) => new Date(b.message.createdAt) - new Date(a.message.createdAt)))
       setLoading(false)
     }, 300)
     return () => clearTimeout(t)
@@ -27,14 +32,14 @@ const ChatSearch = ({ socket, peerId, peerName, myId, onClose, onSelect, onTermC
   useEffect(() => () => onTermChange(''), [onTermChange])
 
   return (
-    <div className='flex h-full flex-col bg-white'>
+    <div className='flex h-full flex-col bg-wa-surface'>
       <header className='flex h-[59px] shrink-0 items-center gap-4 bg-wa-panel px-4'>
         <button onClick={onClose} className='wa-icon-btn -ml-2' title='Close'><IoClose size={22} /></button>
         <h2 className='text-base text-wa-text'>Search messages</h2>
       </header>
       <div className='shrink-0 border-b border-wa-border px-3 py-2'>
         <div className='flex h-[38px] items-center gap-3 rounded-lg bg-wa-panel px-3'>
-          <IoSearchOutline size={17} className='text-[#54656f]' />
+          <IoSearchOutline size={17} className='text-wa-icon' />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

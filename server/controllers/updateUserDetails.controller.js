@@ -49,6 +49,25 @@ const updateUserDetails = async (req, res) => {
       if (privacy.readReceipts !== undefined) {
         update['privacy.readReceipts'] = !!privacy.readReceipts;
       }
+      if (privacy.linkPreviews !== undefined) {
+        update['privacy.linkPreviews'] = !!privacy.linkPreviews;
+      }
+      // status privacy: my contacts / my contacts except... / only share with...
+      if (privacy.status !== undefined) {
+        if (!['contacts', 'except', 'only'].includes(privacy.status)) {
+          return res.status(400).json({ message: "Invalid privacy setting", error: true });
+        }
+        update['privacy.status'] = privacy.status;
+      }
+      for (const key of ['statusExcept', 'statusOnly']) {
+        if (privacy[key] !== undefined) {
+          const list = Array.isArray(privacy[key]) ? [...new Set(privacy[key].map(String))] : null;
+          if (!list || list.length > 1000 || !list.every((id) => /^[a-f0-9]{24}$/.test(id))) {
+            return res.status(400).json({ message: "Invalid privacy setting", error: true });
+          }
+          update[`privacy.${key}`] = list;
+        }
+      }
     }
 
     const userInfomation = await UserModel.findByIdAndUpdate(

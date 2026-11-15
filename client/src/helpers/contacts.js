@@ -1,4 +1,5 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import axios from 'axios'
 import { useSelector } from 'react-redux'
 import { formatPhone } from './phone'
 
@@ -35,4 +36,18 @@ export const usePeopleNames = () => {
   const hint = useCallback((p) => profileHint(p, contacts, me), [contacts, me])
   const isContact = useCallback((id) => !!contacts[String(id)], [contacts])
   return { name, hint, isContact }
+}
+
+// my saved contacts with their (privacy-filtered) profiles, from the same API as "New chat"
+export const useContactList = () => {
+  const saved = useSelector((s) => s.user.contacts)
+  const [list, setList] = useState(null)
+  useEffect(() => {
+    let alive = true
+    axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/searchuser`, { search : '' }, { withCredentials : true })
+      .then((res) => { if (alive) setList((res.data.data || []).filter((u) => u.isContact)) })
+      .catch(() => { if (alive) setList([]) })
+    return () => { alive = false }
+  }, [saved])
+  return list
 }

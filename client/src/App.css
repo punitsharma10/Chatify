@@ -2,13 +2,14 @@
 .scrollbar::-webkit-scrollbar { width: 6px; }
 .scrollbar::-webkit-scrollbar-track { background: transparent; }
 .scrollbar::-webkit-scrollbar-thumb { background: rgba(11, 20, 26, .2); border-radius: 3px; }
+.dark .scrollbar::-webkit-scrollbar-thumb { background: rgba(233, 237, 239, .16); }
 
 /* chat wallpaper: warm beige with a subtle dot pattern */
 .wa-chat-bg {
-  background-color: #efeae2;
+  background-color: rgb(var(--wa-chat));
   background-image:
-    radial-gradient(rgba(84, 101, 111, .10) 1.2px, transparent 1.2px),
-    radial-gradient(rgba(84, 101, 111, .06) 1px, transparent 1px);
+    radial-gradient(rgb(var(--wa-dots) / .10) 1.2px, transparent 1.2px),
+    radial-gradient(rgb(var(--wa-dots) / .06) 1px, transparent 1px);
   background-size: 22px 22px, 22px 22px;
   background-position: 0 0, 11px 11px;
 }
@@ -37,11 +38,16 @@ input::-ms-clear { display: none; }
 }
 .bubble-tail-out::after {
   right: -8px;
-  border-top: 10px solid #d9fdd3;
+  border-top: 10px solid rgb(var(--wa-out));
   border-right: 8px solid transparent;
 }
 .bubble-tail-in::after {
   left: -8px;
-  border-top: 10px solid #ffffff;
+  border-top: 10px solid rgb(var(--wa-surface));
   border-left: 8px solid transparent;
 }
+
+/* chat text size (Settings > Chats > Font size) */
+.chat-text { font-size: var(--chat-font); line-height: 1.34; }
+.wa-wallpaper { background-color: var(--wp-light); }
+.dark .wa-wallpaper { background-color: var(--wp-dark); }

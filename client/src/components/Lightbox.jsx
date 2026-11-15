@@ -4,7 +4,7 @@ import { downloadMedia } from '../helpers/media'
 import { formatFullDate } from '../helpers/formatTime'
 
 // Full-screen viewer for chat photos / videos with prev/next, download, keyboard and swipe support.
-const Lightbox = ({ items, startIndex = 0, onClose, title }) => {
+const Lightbox = ({ items, startIndex = 0, onClose, title, viewOnce = false }) => {
   const [index, setIndex] = useState(startIndex)
   const touchX = useRef(null)
   const item = items[index]
@@ -42,9 +42,10 @@ const Lightbox = ({ items, startIndex = 0, onClose, title }) => {
           <p className='text-xs text-white/60'>{formatFullDate(item.createdAt)}</p>
         </div>
         <div className='flex items-center gap-1'>
+          {viewOnce ? <span className='px-2 text-xs text-white/70'>View once</span> : (
           <button onClick={() => downloadMedia(item.url, item.name)} className='flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10' title='Download'>
             <IoDownloadOutline size={22} />
-          </button>
+          </button>)}
           <button onClick={onClose} className='flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10' title='Close'>
             <IoClose size={26} />
           </button>

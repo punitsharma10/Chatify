@@ -32,22 +32,36 @@ const formatPart = (text, term, key) =>
     return <React.Fragment key={k}>{highlight(part, term, k)}</React.Fragment>
   })
 
-export const renderFormatted = (text = '', term = '') =>
+// "@Name" of mentioned people, shown in green like WhatsApp
+const withMentions = (text, mentions, term, key) => {
+  if (!mentions?.length) return formatPart(text, term, key)
+  const re = new RegExp(`(${mentions.map((m) => escapeRegex(m)).sort((a, b) => b.length - a.length).join('|')})`, 'g')
+  return text.split(re).map((part, i) => (mentions.includes(part)
+    ? <span key={`${key}-m${i}`} className='font-medium text-wa-teal'>{highlight(part, term, `${key}-m${i}`)}</span>
+    : <React.Fragment key={`${key}-p${i}`}>{formatPart(part, term, `${key}-p${i}`)}</React.Fragment>))
+}
+
+// mentions: ['@Alice', ...] to highlight
+export const renderFormatted = (text = '', term = '', mentions = null) =>
   text.split(LINK).map((part, i) => {
     if (/^https?:\/\//i.test(part)) {
       return (
-        <a key={`l${i}`} href={part} target='_blank' rel='noopener noreferrer' className='break-all text-[#027eb5] hover:underline' onClick={(e) => e.stopPropagation()}>
+        <a key={`l${i}`} href={part} target='_blank' rel='noopener noreferrer' className='break-all text-wa-link hover:underline' onClick={(e) => e.stopPropagation()}>
           {highlight(part, term, `l${i}`)}
         </a>
       )
     }
-    return <React.Fragment key={`t${i}`}>{formatPart(part, term, `t${i}`)}</React.Fragment>
+    return <React.Fragment key={`t${i}`}>{withMentions(part, mentions, term, `t${i}`)}</React.Fragment>
   })
 
 // plain-text preview for chat list / reply quotes (strip formatting markers)
 // short description of any message (chat list, notifications, pinned bar, …)
 export const messagePreview = (m) => {
   if (!m) return ''
+  if (m.poll) return `📊 ${m.poll.question}`
+  if (m.contact) return `👤 ${m.contact.name}`
+  if (m.location) return `📍 ${m.location.name || 'Location'}`
+  if (m.viewOnce) return m.viewOnce === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)'
   if (m.text) return plainPreview(m.text)
   if (m.imageUrl) return '📷 Photo'
   if (m.videoUrl) return '🎥 Video'

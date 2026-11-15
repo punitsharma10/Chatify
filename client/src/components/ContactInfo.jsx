@@ -11,7 +11,8 @@ import { formatPhone } from '../helpers/phone'
 import { usePeopleNames } from '../helpers/contacts'
 import { notify, notifyError } from '../helpers/toast'
 import Dialog from './Dialog'
-import { IoPersonAddOutline, IoPersonRemoveOutline, IoPencil } from 'react-icons/io5'
+import { EncryptionRow } from './Encryption'
+import { IoPersonAddOutline, IoPersonRemoveOutline, IoPencil, IoHeartOutline, IoHeartDislikeOutline, IoShareSocialOutline, IoFlagOutline } from 'react-icons/io5'
 
 export const DISAPPEAR_OPTIONS = [
   { value : 0, label : 'Off' },
@@ -23,7 +24,8 @@ export const DISAPPEAR_OPTIONS = [
 // Right-hand panel: profile, shared media/docs/links, starred, chat settings and destructive actions
 const ContactInfo = ({
   socket, peer, online, conversation, onClose, onOpenMedia, onJump,
-  onToggleMute, onSetDisappearing, onToggleBlock, onClear, onDelete
+  onToggleMute, onSetDisappearing, onToggleBlock, onClear, onDelete,
+  favorite, onToggleFavorite, onExport, onReport
 }) => {
   const status = online ? 'online' : peer.lastSeen ? formatLastSeen(peer.lastSeen) : ''
   const names = usePeopleNames()
@@ -53,7 +55,7 @@ const ContactInfo = ({
       </header>
 
       <div className='min-h-0 flex-1 overflow-y-auto scrollbar'>
-        <section className='flex flex-col items-center bg-white px-6 pb-6 pt-7 shadow-sm'>
+        <section className='flex flex-col items-center bg-wa-surface px-6 pb-6 pt-7 shadow-sm'>
           <Avatar width={160} height={160} name={shownName} imageUrl={peer.profile_pic} />
           <h3 className='mt-4 text-center text-2xl text-wa-text'>{shownName}{peer.self ? ' (You)' : ''}</h3>
           {!peer.self && !saved && <p className='mt-1 text-center text-sm text-wa-muted'>~{peer.profileName || peer.name}</p>}
@@ -75,7 +77,7 @@ const ContactInfo = ({
         </section>
 
         {peer.about && (
-          <section className='mt-2.5 bg-white px-6 py-4 shadow-sm'>
+          <section className='mt-2.5 bg-wa-surface px-6 py-4 shadow-sm'>
             <p className='text-sm text-wa-muted'>About</p>
             <p className='mt-1 text-[15px] text-wa-text'>{peer.about}</p>
           </section>
@@ -85,7 +87,8 @@ const ContactInfo = ({
 
         {/* settings */}
         {!peer.self && (
-          <section className='mt-2.5 bg-white py-2 shadow-sm'>
+          <section className='mt-2.5 bg-wa-surface py-2 shadow-sm'>
+            <EncryptionRow peerId={String(peer._id)} name={names.name(peer)} />
             <Row icon={<IoNotificationsOffOutline size={20} />} label='Mute notifications'>
               <Toggle on={!!conversation?.muted} onChange={onToggleMute} disabled={!conversation} />
             </Row>
@@ -94,7 +97,7 @@ const ContactInfo = ({
                 value={conversation?.disappearAfter || 0}
                 onChange={(e) => onSetDisappearing(Number(e.target.value))}
                 disabled={peer.blockedByMe}
-                className='rounded-md border border-wa-border bg-white px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'
+                className='rounded-md border border-wa-border bg-wa-surface px-2 py-1 text-sm text-wa-text outline-none focus:border-wa-green'
               >
                 {DISAPPEAR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
@@ -102,11 +105,14 @@ const ContactInfo = ({
           </section>
         )}
 
-        <section className='mb-6 mt-2.5 bg-white py-2 shadow-sm'>
+        <section className='mt-2.5 bg-wa-surface pb-3 pt-2'>
+          {onToggleFavorite && <ActionRow icon={favorite ? <IoHeartDislikeOutline size={20} /> : <IoHeartOutline size={20} />} label={favorite ? 'Remove from favourites' : 'Add to favourites'} onClick={onToggleFavorite} />}
+          {onExport && <ActionRow icon={<IoShareSocialOutline size={20} />} label='Export chat' onClick={onExport} />}
+          <ActionRow icon={<MdOutlineCleaningServices size={20} />} label='Clear chat' danger onClick={onClear} disabled={!conversation} />
           {!peer.self && (
             <ActionRow icon={peer.blockedByMe ? <MdBlock size={20} /> : <IoBan size={20} />} label={peer.blockedByMe ? `Unblock ${peer.name}` : `Block ${peer.name}`} danger={!peer.blockedByMe} onClick={onToggleBlock} />
           )}
-          <ActionRow icon={<MdOutlineCleaningServices size={20} />} label='Clear chat' danger onClick={onClear} disabled={!conversation} />
+          {onReport && !peer.self && <ActionRow icon={<IoFlagOutline size={20} />} label={`Report ${peer.name}`} danger onClick={onReport} />}
           <ActionRow icon={<IoTrashOutline size={20} />} label='Delete chat' danger onClick={onDelete} disabled={!conversation} />
         </section>
       </div>
@@ -171,7 +177,7 @@ export const SharedContent = ({ socket, chatId, refreshKey, onOpenMedia, onJump 
   const links = (shared?.links || []).flatMap((m) => (m.text.match(/https?:\/\/\S+/gi) || []).map((url, i) => ({ url, m, key : `${m._id}-${i}` })))
 
   return (
-    <section className='mt-2.5 bg-white shadow-sm'>
+    <section className='mt-2.5 bg-wa-surface shadow-sm'>
       <div className='flex border-b border-wa-border'>
         {[['media', 'Media'], ['docs', 'Docs'], ['links', 'Links'], ['starred', 'Starred']].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={`flex-1 py-3 text-sm transition-colors ${tab === k ? 'border-b-2 border-wa-green font-medium text-wa-green' : 'text-wa-muted hover:bg-wa-hover'}`}>
@@ -186,8 +192,10 @@ export const SharedContent = ({ socket, chatId, refreshKey, onOpenMedia, onJump 
           shared.media.length ? (
             <div className='grid grid-cols-3 gap-1.5'>
               {shared.media.map((m) => (
-                <button key={m._id} onClick={() => onOpenMedia(m, shared.media)} className='relative aspect-square overflow-hidden rounded-md bg-[#e9edef]'>
-                  <img src={m.imageUrl ? thumbUrl(m.imageUrl, 240) : videoPoster(m.videoUrl)} alt='' loading='lazy' className='h-full w-full object-cover' />
+                <button key={m._id} onClick={() => onOpenMedia(m, shared.media)} className='relative aspect-square overflow-hidden rounded-md bg-wa-raised'>
+                  {m.videoUrl && m.videoUrl.startsWith('blob:')
+                    ? <video src={m.videoUrl} muted playsInline preload='metadata' className='h-full w-full object-cover' />
+                    : <img src={m.imageUrl ? thumbUrl(m.imageUrl, 240) : videoPoster(m.videoUrl)} alt='' loading='lazy' className='h-full w-full object-cover' />}
                   {m.videoUrl && <span className='absolute inset-0 flex items-center justify-center'><span className='rounded-full bg-black/50 p-1.5 text-white'><IoPlay size={14} /></span></span>}
                 </button>
               ))}
@@ -211,7 +219,7 @@ export const SharedContent = ({ socket, chatId, refreshKey, onOpenMedia, onJump 
         {shared && tab === 'links' && (
           links.length ? links.map(({ url, m, key }) => (
             <div key={key} className='border-b border-wa-border px-1 py-2.5 last:border-0'>
-              <a href={url} target='_blank' rel='noopener noreferrer' className='block truncate text-sm text-[#027eb5] hover:underline'>{url}</a>
+              <a href={url} target='_blank' rel='noopener noreferrer' className='block truncate text-sm text-wa-link hover:underline'>{url}</a>
               <button onClick={() => onJump(m)} className='mt-0.5 text-xs text-wa-muted hover:underline'>{formatListTime(m.createdAt)} · Show in chat</button>
             </div>
           )) : <Empty text='No links shared yet' />
@@ -237,7 +245,7 @@ const Empty = ({ text }) => <p className='py-8 text-center text-sm text-wa-muted
 
 export const Row = ({ icon, label, sub, children }) => (
   <div className='flex items-center gap-4 px-6 py-3'>
-    <span className='text-[#54656f]'>{icon}</span>
+    <span className='text-wa-icon'>{icon}</span>
     <div className='min-w-0 flex-1'>
       <p className='text-[15px] text-wa-text'>{label}</p>
       {sub && <p className='text-xs text-wa-muted'>{sub}</p>}
@@ -261,7 +269,7 @@ export const Toggle = ({ on, onChange, disabled }) => (
     onClick={() => onChange(!on)}
     className={`relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40 ${on ? 'bg-wa-green' : 'bg-[#c4cbd0]'}`}
   >
-    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
+    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-wa-surface shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
   </button>
 )
 

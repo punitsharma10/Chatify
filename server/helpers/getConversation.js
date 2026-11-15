@@ -17,9 +17,10 @@ const listItem = async (conv, meUser) => {
         ? { ...filter, msgByUserId : { $ne : meUser._id }, 'readBy.userId' : { $ne : meUser._id }, 'system.action' : { $exists : false } }
         : { ...filter, msgByUserId : { $ne : meUser._id }, seen : false }
 
-    const [lastMsg, unseenMsg] = await Promise.all([
+    const [lastMsg, unseenMsg, mentionsMe] = await Promise.all([
         MessageModel.findOne(filter).sort({ createdAt : -1, _id : -1 }).lean(),
-        MessageModel.countDocuments(unreadFilter)
+        MessageModel.countDocuments(unreadFilter),
+        group ? MessageModel.countDocuments({ ...unreadFilter, mentions : meUser._id }) : 0
     ])
 
     // "deleted for me" chats stay hidden until a newer message arrives
@@ -31,7 +32,12 @@ const listItem = async (conv, meUser) => {
         archived : !!state.archived,
         pinned : !!state.pinned,
         pinnedAt : state.pinnedAt,
-        muted : !!state.muted,
+        // a timed mute ("8 hours", "1 week") ends by itself
+        muted : !!state.muted && (!state.mutedUntil || new Date(state.mutedUntil) > new Date()),
+        mutedUntil : state.muted && state.mutedUntil && new Date(state.mutedUntil) > new Date() ? state.mutedUntil : undefined,
+        favorite : !!state.favorite,
+        locked : !!state.locked,
+        mentioned : mentionsMe > 0,
         markedUnread : !!state.markedUnread,
         disappearAfter : conv.disappearAfter || 0,
         lastActivity : lastMsg?.createdAt || conv.updatedAt

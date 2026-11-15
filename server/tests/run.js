@@ -35,6 +35,10 @@ const env = {
     // dotenv never overrides variables that already exist, so these keep real email/SMS off during tests
     SMTP_USER : '', SMTP_PASS : '', SMS_PROVIDER : '', SMS_OTP_LENGTH : '', SMS_MESSAGE_STYLE : '',
     OTP_LOG : logFile,
+    // link-preview tests use a page on this machine (never allowed in production)
+    LINK_PREVIEW_ALLOW_PRIVATE : '1',
+    // scheduled messages / reminders are checked every second in tests
+    SCHEDULER_TICK_MS : '1000',
     TEST_API : `http://localhost:${PORT}`
 }
 

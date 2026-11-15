@@ -31,6 +31,8 @@ mongoose.connect(process.env.MONGODB_URI, {})
     console.log("connected to mongodb");
     // link pre-existing messages to their conversations (no-op once done)
     require("./helpers/migrate")().catch((err) => console.log("migration error", err.message));
+    // scheduled messages + reminders
+    require("./helpers/scheduler").startScheduler(require("./socket/index").io);
   })
   .catch((err) => {
     console.log("error", err);

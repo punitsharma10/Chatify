@@ -2,6 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme palette (space-separated RGB so Tailwind opacity modifiers work). Light = WhatsApp Web light,
+   .dark = WhatsApp Web dark. The theme class is set on <html> by helpers/theme.js. */
+@layer base {
+  :root {
+    color-scheme: light;
+    --wa-surface: 255 255 255;
+    --wa-panel: 240 242 245;
+    --wa-rail: 247 245 243;
+    --wa-rail-active: 222 220 218;
+    --wa-chat: 239 234 226;
+    --wa-text: 17 27 33;
+    --wa-muted: 102 119 129;
+    --wa-border: 233 237 239;
+    --wa-hover: 245 246 246;
+    --wa-out: 217 253 211;
+    --wa-icon: 84 101 111;
+    --wa-subtle: 134 150 160;
+    --wa-strong: 59 74 84;
+    --wa-raised: 233 237 239;
+    --wa-line: 209 215 219;
+    --wa-quote-out: 209 244 204;
+    --wa-notice: 255 238 205;
+    --wa-chip: 231 252 227;
+    --wa-link: 2 126 181;
+    --wa-teal: 0 128 105;
+    --wa-backdrop: 218 219 211;
+    --wa-dots: 84 101 111;
+    --chat-font: 14.2px;
+  }
+  .dark {
+    color-scheme: dark;
+    --wa-surface: 17 27 33;
+    --wa-panel: 32 44 51;
+    --wa-rail: 32 44 51;
+    --wa-rail-active: 55 68 76;
+    --wa-chat: 11 20 26;
+    --wa-text: 233 237 239;
+    --wa-muted: 134 150 160;
+    --wa-border: 34 45 52;
+    --wa-hover: 32 44 51;
+    --wa-out: 0 92 75;
+    --wa-icon: 174 186 193;
+    --wa-subtle: 134 150 160;
+    --wa-strong: 209 215 219;
+    --wa-raised: 42 57 66;
+    --wa-line: 59 74 84;
+    --wa-quote-out: 2 81 68;
+    --wa-notice: 24 34 41;
+    --wa-chip: 10 51 44;
+    --wa-link: 83 189 235;
+    --wa-teal: 0 168 132;
+    --wa-backdrop: 12 19 23;
+    --wa-dots: 233 237 239;
+  }
+  .dark select, .dark input, .dark textarea { color-scheme: dark; }
+}
+
 /* Reusable component classes. Kept inside the components layer so responsive
    utilities placed next to them (md:hidden, w-full, ...) can still override them. */
 @layer components {
@@ -9,7 +66,7 @@
   .wa-input {
     @apply w-full border-0 border-b-2 border-wa-border bg-transparent px-1 py-2 text-base text-wa-text outline-none transition-colors sm:text-[15px];
   }
-  .wa-input::placeholder { color: #8696a0; }
+  .wa-input::placeholder { color: rgb(var(--wa-subtle)); }
   .wa-input:focus { @apply border-wa-green; }
 
   .wa-btn {
@@ -17,7 +74,7 @@
   }
 
   .wa-icon-btn {
-    @apply flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5;
+    @apply flex h-10 w-10 items-center justify-center rounded-full text-wa-icon transition-colors hover:bg-black/5 dark:hover:bg-white/10;
   }
 }
 
