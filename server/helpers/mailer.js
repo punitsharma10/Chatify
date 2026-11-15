@@ -8,10 +8,43 @@ const nodemailer = require('nodemailer')
 //
 // If SMTP isn't configured and NODE_ENV isn't "production", codes are printed in the server terminal
 // so you can develop without email set up.
+//
+// Hosting on Render's free plan: Render blocks outgoing SMTP (ports 25/465/587), so Gmail SMTP fails there.
+// Use Brevo's HTTPS email API instead (free: 300 emails/day, no card):
+//   BREVO_API_KEY=xkeysib-...           (Brevo -> SMTP & API -> API keys)
+//   MAIL_FROM_EMAIL=yourname@gmail.com  (a sender you verified in Brevo -> Senders)
+//   (optional) MAIL_FROM_NAME=Chatify
+// When BREVO_API_KEY is set it is used instead of SMTP.
 
 let transporter = null
 
-const isConfigured = () => Boolean(process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())
+const useBrevo = () => Boolean(process.env.BREVO_API_KEY?.trim())
+const isConfigured = () => useBrevo() || Boolean(process.env.SMTP_USER?.trim() && process.env.SMTP_PASS?.trim())
+
+// "Chatify <me@x.com>" -> { name, email }
+const sender = () => {
+    const from = process.env.MAIL_FROM?.trim() || ''
+    const m = from.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/)
+    return {
+        name : process.env.MAIL_FROM_NAME?.trim() || (m && m[1].trim()) || 'Chatify',
+        email : process.env.MAIL_FROM_EMAIL?.trim() || (m && m[2].trim()) || process.env.SMTP_USER?.trim() || ''
+    }
+}
+
+const sendWithBrevo = async ({ to, subject, text, html }) => {
+    const from = sender()
+    if (!from.email) throw new Error('Set MAIL_FROM_EMAIL to the sender address you verified in Brevo')
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method : 'POST',
+        headers : { 'api-key' : process.env.BREVO_API_KEY.trim(), 'Content-Type' : 'application/json', Accept : 'application/json' },
+        body : JSON.stringify({ sender : from, to : [{ email : to }], subject, textContent : text, htmlContent : html }),
+        signal : AbortSignal.timeout(15000)
+    })
+    if (!res.ok) {
+        const detail = await res.text().catch(() => '')
+        throw new Error(`Brevo responded ${res.status}: ${detail.slice(0, 200)}`)
+    }
+}
 
 const getTransporter = () => {
     if (transporter) return transporter
@@ -20,6 +53,9 @@ const getTransporter = () => {
         host : process.env.SMTP_HOST?.trim() || 'smtp.gmail.com',
         port,
         secure : port === 465,
+        // fail fast when the host blocks SMTP (e.g. Render free plan) instead of hanging for minutes
+        connectionTimeout : 10000,
+        greetingTimeout : 10000,
         auth : {
             user : process.env.SMTP_USER.trim(),
             pass : process.env.SMTP_PASS.replace(/\s+/g, '')   // Google shows app passwords with spaces
@@ -65,13 +101,17 @@ const sendOtpEmail = async (to, code, purpose, minutes) => {
         console.log(`\n[dev] Email not configured — ${purpose} code for ${to}: ${code}\n`)
         return { dev : true }
     }
-    await getTransporter().sendMail({
-        from : process.env.MAIL_FROM?.trim() || `Chatify <${process.env.SMTP_USER.trim()}>`,
+    const mail = {
         to,
         subject : copy.subject,
         text : `${copy.title}\n\n${copy.line}\n\nYour code: ${code}\n\nThis code expires in ${minutes} minutes. If you didn't request it, ignore this email.`,
         html : buildHtml(code, copy, minutes)
-    })
+    }
+    if (useBrevo()) {
+        await sendWithBrevo(mail)
+    } else {
+        await getTransporter().sendMail({ from : process.env.MAIL_FROM?.trim() || `Chatify <${process.env.SMTP_USER.trim()}>`, ...mail })
+    }
     return { dev : false }
 }
 
