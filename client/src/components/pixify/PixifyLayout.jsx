@@ -13,6 +13,7 @@ import { APPS } from '../../helpers/apps'
 import { useSendToChat } from '../social/common'
 import CreatePost from './CreatePost'
 import { ShareSheet } from './direct/DirectModals'
+import MessagesPill from './direct/MessagesPill'
 
 // what every Pixify screen can reach: create a post / story, send a post to Chats, refresh after changes
 const PixifyCtx = createContext(null)
@@ -156,6 +157,8 @@ const PixifyLayout = () => {
         {creating && <CreatePost onClose={() => setCreating(false)} onPosted={(post) => { setCreating(false); setVersion((v) => v + 1); navigate(`/pixify/p/${post._id}`) }} />}
         {story.element}
         {send.element}
+        {/* Instagram-style floating Messages button (not inside Messages itself) */}
+        {!direct && <MessagesPill />}
         {sharing && <ShareSheet {...sharing} onClose={() => setSharing(null)} onChats={send.open} />}
         {user._id && !user.username && <UsernamePrompt />}
       </div>

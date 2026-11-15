@@ -173,9 +173,9 @@ const Reel = ({ post : initial, onHidden }) => {
   const m = post.media[0]
 
   return (
-    <section ref={box} className='relative flex h-full snap-start snap-always items-center justify-center gap-6 md:py-5'>
-      {/* wide screens: who posted it + caption on the left, like Instagram */}
-      <div className='hidden w-[300px] self-end pb-4 xl:block'><Info post={post} /></div>
+    <section ref={box} className='relative grid h-full snap-start snap-always grid-cols-1 md:grid-cols-[1fr_auto_1fr] md:gap-6 md:py-5'>
+      {/* wide screens: who posted it + caption on the left; the video stays centred on the screen, like Instagram */}
+      <div className='hidden min-w-0 items-end justify-end pb-4 md:flex'><div className='hidden w-[300px] xl:block'><Info post={post} /></div></div>
 
       <div className='relative h-full w-full overflow-hidden bg-black md:aspect-[9/16] md:w-auto md:rounded-xl' onDoubleClick={doubleTap}>
         {m.youtube
@@ -193,7 +193,7 @@ const Reel = ({ post : initial, onHidden }) => {
       </div>
 
       {/* tablets and up: actions beside the video */}
-      <div className='hidden self-end pb-4 md:block'>
+      <div className='hidden items-end pb-4 md:flex'>
         <Actions actions={actions} onComment={() => setComments(true)} onMore={() => setMenu(true)} />
       </div>
 
