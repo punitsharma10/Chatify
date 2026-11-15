@@ -78,7 +78,7 @@ const EditProfile = ({ profile, onClose, onSaved }) => {
             <input value={bday.year} onChange={(e) => setBday({ ...bday, year : e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder='Year (private)' aria-label='Year' className='h-10 rounded-md border border-cx-border bg-cx-input px-2 outline-none' />
           </div>
         </div>
-        <p className='mt-4 text-sm text-cx-muted'>Your name and profile picture are shared with Chats. Change them in Chats → Profile.</p>
+        <p className='mt-4 text-sm text-cx-muted'>Your name and profile picture are shared with Chatify. Change them in Chatify → Profile.</p>
       </div>
       <div className='flex justify-end gap-2 border-t border-cx-border p-3'>
         <button onClick={onClose} className='h-9 rounded-md px-4 font-semibold text-cx-blue hover:bg-cx-hover'>Cancel</button>
@@ -289,7 +289,7 @@ export const ConnectifyFriends = () => {
     api.get('/friends/suggestions').then((r) => setSugs(r.people)).catch(() => setSugs([]))
   }
   useEffect(load, [])
-  const mutual = (p) => (p.mutualFriends ? `${p.mutualFriends} mutual friend${p.mutualFriends > 1 ? 's' : ''}` : p.fromContacts ? 'In your Chats contacts' : '')
+  const mutual = (p) => (p.mutualFriends ? `${p.mutualFriends} mutual friend${p.mutualFriends > 1 ? 's' : ''}` : p.fromContacts ? 'In your Chatify contacts' : '')
   return (
     <div className='mx-auto max-w-[1100px] px-3 py-4 sm:px-6'>
       <div className='mb-4 flex flex-wrap gap-2'>
@@ -310,7 +310,7 @@ export const ConnectifyFriends = () => {
       {tab === 'home' && (
         <section>
           <h2 className='mb-3 text-xl font-bold'>People you may know</h2>
-          {sugs === null ? <Spinner /> : !sugs.length ? <p className='text-cx-muted'>No suggestions right now. Save contacts in Chats or add friends to see more.</p> : (
+          {sugs === null ? <Spinner /> : !sugs.length ? <p className='text-cx-muted'>No suggestions right now. Save contacts in Chatify or add friends to see more.</p> : (
             <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5'>
               {sugs.map((p) => <PersonCard key={p._id} p={p} sub={mutual(p)}><FriendButton person={p} compact /></PersonCard>)}
             </div>

@@ -172,7 +172,7 @@ const PixifyHome = () => {
         </div>
         <div className='mt-2 flex flex-col'>
           {suggestions === null && <span className='my-4 h-5 w-5 animate-spin rounded-full border-2 border-px-border border-t-px-muted' />}
-          {suggestions?.length === 0 && <p className='py-2 text-xs text-px-muted'>Suggestions appear as you follow people and save contacts in Chats.</p>}
+          {suggestions?.length === 0 && <p className='py-2 text-xs text-px-muted'>Suggestions appear as you follow people and save contacts in Chatify.</p>}
           {suggestions?.slice(0, 6).map((p) => (
             <div key={p._id} className='flex items-center gap-3 py-2'>
               <Link to={`/pixify/u/${p.username}`}><Avatar width={44} height={44} name={p.name} imageUrl={p.profile_pic} /></Link>

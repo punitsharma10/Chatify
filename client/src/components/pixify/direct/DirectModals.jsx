@@ -210,7 +210,7 @@ export const ShareSheet = ({ post, profile, forwardId, onClose, onChats }) => {
         ) : forwardId ? <p className='px-4 py-4 text-center text-sm text-px-muted'>Choose who to forward to.</p> : (
           <div className='flex justify-center gap-6 px-4 py-3'>
             <button onClick={copy} className='flex w-20 flex-col items-center gap-1.5 text-xs'><span className='flex h-12 w-12 items-center justify-center rounded-full bg-px-raised'><IoLinkOutline size={24} /></span>Copy link</button>
-            {post && onChats && <button onClick={() => { onClose(); onChats(post) }} className='flex w-20 flex-col items-center gap-1.5 text-xs'><span className='flex h-12 w-12 items-center justify-center rounded-full bg-px-raised'><IoChatbubbleEllipsesOutline size={24} /></span>Chats</button>}
+            {post && onChats && <button onClick={() => { onClose(); onChats(post) }} className='flex w-20 flex-col items-center gap-1.5 text-xs'><span className='flex h-12 w-12 items-center justify-center rounded-full bg-px-raised'><IoChatbubbleEllipsesOutline size={24} /></span>Chatify</button>}
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 // The three apps inside Chatify. One login, one account; switching only changes the screen.
 export const APPS = [
-  { id : 'chats', name : 'Chats', path : '/', hint : 'Messages, groups and calls' },
+  { id : 'chats', name : 'Chatify', path : '/', hint : 'Chats, groups and calls' },
   { id : 'pixify', name : 'Pixify', path : '/pixify', hint : 'Photos, stories and reels' },
   { id : 'connectify', name : 'Connectify', path : '/connectify', hint : 'Friends, posts and groups' },
 ]

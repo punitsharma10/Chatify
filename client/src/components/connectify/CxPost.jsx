@@ -301,7 +301,7 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       {shareMenu && (
         <ActionSheet tone='cx' title='Share' onClose={() => setShareMenu(false)} items={[
           { label : 'Share to Feed', hidden : !shareable, onClick : () => openComposer({ sharedPost : target }) },
-          { label : 'Send in Chats', onClick : () => sendToChat(target) },
+          { label : 'Send in Chatify', onClick : () => sendToChat(target) },
           { label : 'Copy link', onClick : () => copyPostLink(target) },
         ]} />
       )}

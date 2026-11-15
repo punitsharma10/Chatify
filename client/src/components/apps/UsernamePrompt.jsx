@@ -40,14 +40,14 @@ const UsernamePrompt = ({ app = 'pixify' }) => {
         <div className='flex items-center justify-center gap-2'>{app === 'pixify' ? <><PixifyMark size={34} /><PixifyWordmark /></> : <><ConnectifyMark size={34} /><ConnectifyWordmark /></>}</div>
         <div className='mt-6 flex justify-center'><Avatar width={84} height={84} name={user.name} imageUrl={user.profile_pic} /></div>
         <h2 id='px-username-title' className='mt-4 text-[17px] font-semibold'>Choose your username</h2>
-        <p className='mt-1 text-sm text-px-muted'>People find and mention you with it. It's the same in Chats, Pixify and Connectify, and you can change it later in your profile.</p>
+        <p className='mt-1 text-sm text-px-muted'>People find and mention you with it. It's the same in Chatify, Pixify and Connectify, and you can change it later in your profile.</p>
         <div className='mt-5 text-left'>
           <UsernameField tone='px' value={value} nameHint={user.name} autoFocus onChange={(v, s) => { setValue(v); setState(s) }} />
         </div>
         <button disabled={state !== 'ok' || saving} className='mt-5 h-9 w-full rounded-lg bg-px-blue text-sm font-semibold text-white transition hover:brightness-95 disabled:opacity-50'>
           {saving ? 'Saving…' : 'Continue'}
         </button>
-        <button type='button' onClick={() => navigate('/')} className='mt-3 text-sm font-semibold text-px-blue'>Back to Chats</button>
+        <button type='button' onClick={() => navigate('/')} className='mt-3 text-sm font-semibold text-px-blue'>Back to Chatify</button>
       </form>
     </div>
   )

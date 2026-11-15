@@ -172,7 +172,7 @@ const EditUserDetails = ({ onClose, user }) => {
         {/* @username */}
         <div className='mt-2.5 bg-wa-surface px-5 py-4 shadow-sm sm:px-7'>
           <UsernameField value={username} current={user?.username || ''} nameHint={data.name} onChange={(v, st) => { setUsername(v); setUsernameState(st) }} />
-          <p className='mt-2 text-xs text-wa-muted'>One username for Chats, Pixify and Connectify. People can find you by typing your exact @username.</p>
+          <p className='mt-2 text-xs text-wa-muted'>One username for Chatify, Pixify and Connectify. People can find you by typing your exact @username.</p>
         </div>
 
         {/* phone (read only) */}

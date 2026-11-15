@@ -83,7 +83,7 @@ const ConnectifyLayout = () => {
           <div className='flex items-center gap-2'>
             <AppSwitcher variant='row' className='hidden lg:flex' />
             <button onClick={() => navigate('/connectify/search')} title='Search' className='flex h-10 w-10 items-center justify-center rounded-full bg-cx-input hover:brightness-95 sm:hidden'><IoSearchOutline size={20} /></button>
-            <button onClick={() => navigate('/')} title='Messages (Chats)' className='flex h-10 w-10 items-center justify-center rounded-full bg-cx-input hover:brightness-95'><IoChatbubbleEllipses size={20} /></button>
+            <button onClick={() => navigate('/')} title='Messages (Chatify)' className='flex h-10 w-10 items-center justify-center rounded-full bg-cx-input hover:brightness-95'><IoChatbubbleEllipses size={20} /></button>
             <button onClick={() => navigate('/connectify/notifications')} title='Notifications' className={`relative hidden h-10 w-10 items-center justify-center rounded-full hover:brightness-95 md:flex ${at('/connectify/notifications') ? 'bg-cx-blue/15 text-cx-blue' : 'bg-cx-input'}`}>
               <IoNotifications size={20} /><Badge n={unread.connectify} />
             </button>
@@ -107,7 +107,7 @@ const ConnectifyLayout = () => {
             {SHORTCUTS.filter((s) => s.label !== 'Search').map((s) => <SideLink key={s.path} icon={<s.Icon size={28} className={s.color} />} label={s.label} onClick={() => navigate(s.path)} active={at(s.path)} />)}
             <div className='mx-2 my-3 border-t border-cx-border' />
             <p className='px-2 pb-1 text-[17px] font-semibold text-cx-muted'>Your apps</p>
-            <SideLink icon={<ChatsMark size={30} />} label='Chats' onClick={() => navigate('/')} />
+            <SideLink icon={<ChatsMark size={30} />} label='Chatify' onClick={() => navigate('/')} />
             <SideLink icon={<PixifyMark size={30} />} label='Pixify' onClick={() => navigate('/pixify')} />
             <p className='px-2 pt-4 text-xs text-cx-muted'>Connectify · part of Chatify © {new Date().getFullYear()}</p>
           </aside>
@@ -121,7 +121,7 @@ const ConnectifyLayout = () => {
             <BirthdaysCard />
             <p className='px-2 pb-2 pt-2 text-[17px] font-semibold text-cx-muted'>Contacts</p>
             {contacts === null && <span className='mx-2 my-3 block h-5 w-5 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />}
-            {contacts?.length === 0 && <p className='px-2 text-sm text-cx-muted'>Save contacts in Chats to see them here.</p>}
+            {contacts?.length === 0 && <p className='px-2 text-sm text-cx-muted'>Save contacts in Chatify to see them here.</p>}
             {contacts?.map((p) => (
               <button key={p._id} onClick={() => navigate('/' + p._id)} title={`Message ${p.name}`} className='flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-cx-hover'>
                 <span className='relative'>

@@ -96,7 +96,7 @@ const PeopleYouMayKnow = () => {
             </Link>
             <div className='p-3'>
               <Link to={`/connectify/u/${p.username || p._id}`} className='block truncate text-[15px] font-semibold hover:underline'>{p.name}</Link>
-              <p className='mb-2 truncate text-[13px] text-cx-muted'>{p.mutualFriends ? `${p.mutualFriends} mutual friend${p.mutualFriends > 1 ? 's' : ''}` : p.fromContacts ? 'In your Chats contacts' : ' '}</p>
+              <p className='mb-2 truncate text-[13px] text-cx-muted'>{p.mutualFriends ? `${p.mutualFriends} mutual friend${p.mutualFriends > 1 ? 's' : ''}` : p.fromContacts ? 'In your Chatify contacts' : ' '}</p>
               <FriendButton person={p} compact />
             </div>
           </div>
