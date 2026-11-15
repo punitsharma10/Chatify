@@ -105,7 +105,7 @@ const Reel = ({ post : initial }) => {
   return (
     <section ref={box} className='relative flex h-full snap-start snap-always items-center justify-center py-0 md:py-4'>
       <div className='relative h-full w-full overflow-hidden bg-black md:aspect-[9/16] md:h-full md:w-auto md:rounded-lg'>
-        <AutoVideo src={post.media[0].url} className='h-full w-full' fit='object-contain' />
+        <AutoVideo src={post.media[0].url} poster={post.media[0].poster} tapForSound className='h-full w-full' fit='object-contain' />
         <div className='pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pr-16 text-white'>
           <div className='pointer-events-auto flex items-center gap-2'>
             {post.external

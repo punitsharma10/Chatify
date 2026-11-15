@@ -39,11 +39,16 @@ const card = (id, h, media, isReel) => ({
     createdAt : new Date().toISOString()
 })
 
-// medium (~720p) is a good size for phones; fall back to the others
+// the lightest file that still looks sharp on a phone (960px+ on the long side, under 20 MB), else the smallest;
+// clips longer than a minute are skipped (reels are short, and long files are heavy)
+const MAX_BYTES = 20 * 1024 * 1024
 const videoCard = (h) => {
+    if (h.duration && h.duration > 60) return null
     const v = h.videos || {}
-    const f = [v.medium, v.small, v.large, v.tiny].find((x) => x?.url)
-    if (!f) return null
+    const files = [v.tiny, v.small, v.medium, v.large].filter((x) => x?.url)
+    if (!files.length) return null
+    const sharp = files.filter((x) => Math.max(x.width || 0, x.height || 0) >= 960 && (!x.size || x.size <= MAX_BYTES))
+    const f = sharp.length ? sharp.reduce((a, b) => ((a.size || Infinity) <= (b.size || Infinity) ? a : b)) : files.reduce((a, b) => ((a.size || Infinity) <= (b.size || Infinity) ? a : b))
     const poster = f.thumbnail || v.medium?.thumbnail || v.small?.thumbnail || (h.picture_id ? `https://i.vimeocdn.com/video/${h.picture_id}_640x360.jpg` : undefined)
     return card(`pixabay-v-${h.id}`, h, { url : f.url, kind : 'video', width : f.width, height : f.height, ...(poster ? { poster } : {}) }, true)
 }
@@ -60,8 +65,8 @@ const topicFor = (k, per) => {
 // Reels: videos, tall ones first (Pixabay can't filter videos by orientation)
 const reels = async (k, per = 8) => {
     if (!enabled()) return []
-    const { topic, page } = topicFor(k, 20)
-    const data = await get('/api/videos/', { q : topic, per_page : '20', page : String(page) })
+    const { topic, page } = topicFor(k, 30)
+    const data = await get('/api/videos/', { q : topic, per_page : '30', page : String(page) })
     const cards = (data.hits || []).map(videoCard).filter(Boolean)
     cards.sort((a, b) => (b.media[0].height > b.media[0].width) - (a.media[0].height > a.media[0].width))
     return cards.slice(0, per)

@@ -29,22 +29,63 @@ export const RichText = ({ text, app, limit = 0, className = '', linkClass = '' 
   )
 }
 
-// a video that plays muted when on screen (feeds), with a mute button
-export const AutoVideo = ({ src, className = '', fit = 'object-cover', loop = true, controls = false, onClick }) => {
+// sound on / off for every feed video and reel, like Instagram: unmute once and the next videos play with sound too
+const sound = { on : false, listeners : new Set() }
+const setSound = (on) => { sound.on = on; sound.listeners.forEach((fn) => fn(on)) }
+const useSound = () => {
+  const [on, setOn] = useState(sound.on)
+  useEffect(() => { sound.listeners.add(setOn); return () => { sound.listeners.delete(setOn) } }, [])
+  return on
+}
+
+// does this video have an audio track? (null = can't tell yet)
+const hasAudio = (v) => {
+  if (typeof v.mozHasAudio === 'boolean') return v.mozHasAudio
+  if (v.audioTracks) return v.audioTracks.length > 0
+  if (typeof v.webkitAudioDecodedByteCount === 'number') return v.currentTime > 0.5 ? v.webkitAudioDecodedByteCount > 0 : null
+  return null
+}
+
+// a video that plays when on screen (feeds, Reels). Browsers only allow autoplay without sound, so it starts muted
+// until you turn sound on. `tapForSound`: tapping the video turns sound on / off (Reels); otherwise tapping pauses.
+export const AutoVideo = ({ src, poster, className = '', fit = 'object-cover', loop = true, controls = false, onClick, tapForSound = false }) => {
   const ref = useRef(null)
-  const [muted, setMuted] = useState(true)
+  const soundOn = useSound()
   const [playing, setPlaying] = useState(false)
+  const [silent, setSilent] = useState(false) // the file has no audio track
+  const [flash, setFlash] = useState(0) // big speaker icon after tapping
+
+  // the `muted` property has to be set on the element itself (React only sets the attribute once)
+  useEffect(() => { if (ref.current) ref.current.muted = !soundOn }, [soundOn])
+
   useEffect(() => {
     const v = ref.current
     if (!v) return
+    const play = () => {
+      v.muted = !sound.on
+      // if the browser refuses sound (no tap on the page yet), play muted instead
+      v.play().then(() => setPlaying(true)).catch(() => { v.muted = true; v.play().then(() => setPlaying(true)).catch(() => {}) })
+    }
     const io = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting && e.intersectionRatio > 0.6) v.play().then(() => setPlaying(true)).catch(() => {})
+      if (e.isIntersecting && e.intersectionRatio > 0.6) play()
       else { v.pause(); setPlaying(false) }
     }, { threshold : [0, 0.6, 1] })
     io.observe(v)
-    return () => io.disconnect()
-  }, [])
-  const toggle = (e) => {
+    const check = () => { const a = hasAudio(v); if (a !== null) setSilent(!a) }
+    v.addEventListener('loadedmetadata', check)
+    v.addEventListener('timeupdate', check)
+    return () => { io.disconnect(); v.removeEventListener('loadedmetadata', check); v.removeEventListener('timeupdate', check) }
+  }, [src])
+
+  const toggleSound = (e) => {
+    e?.stopPropagation()
+    const on = !sound.on
+    setSound(on)
+    const v = ref.current
+    if (v) { v.muted = !on; if (v.paused) v.play().then(() => setPlaying(true)).catch(() => {}) }
+    setFlash((n) => n + 1)
+  }
+  const togglePlay = (e) => {
     e.stopPropagation()
     const v = ref.current
     if (!v) return
@@ -52,11 +93,17 @@ export const AutoVideo = ({ src, className = '', fit = 'object-cover', loop = tr
     else { v.pause(); setPlaying(false) }
   }
   return (
-    <div className={`relative ${className}`} onClick={onClick || toggle}>
-      <video ref={ref} src={src} poster={videoPoster(src)} muted={muted} loop={loop} playsInline controls={controls} preload='metadata' className={`h-full w-full ${fit}`} />
+    <div className={`relative ${className}`} onClick={onClick || (tapForSound ? toggleSound : togglePlay)}>
+      <video ref={ref} src={src} poster={poster || videoPoster(src)} muted loop={loop} playsInline controls={controls} preload='metadata' className={`h-full w-full ${fit}`} />
       {!playing && !controls && <span className='pointer-events-none absolute inset-0 flex items-center justify-center'><span className='flex h-16 w-16 items-center justify-center rounded-full bg-black/40 text-white'><IoPlay size={30} /></span></span>}
-      <button onClick={(e) => { e.stopPropagation(); setMuted((m) => !m) }} className='absolute bottom-3 right-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white' title={muted ? 'Unmute' : 'Mute'}>
-        {muted ? <IoVolumeMuteOutline size={15} /> : <IoVolumeHighOutline size={15} />}
+      {flash > 0 && (
+        <span key={flash} className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+          <span className='flex h-16 w-16 animate-[heartpop_.9s_ease-out_forwards] items-center justify-center rounded-full bg-black/50 text-white'>{soundOn && !silent ? <IoVolumeHighOutline size={30} /> : <IoVolumeMuteOutline size={30} />}</span>
+        </span>
+      )}
+      {silent && soundOn && <span className='pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-white'>This video has no sound</span>}
+      <button onClick={toggleSound} className={`absolute flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white ${tapForSound ? 'right-3 top-3' : 'bottom-3 right-3'}`} title={soundOn ? 'Mute' : 'Turn sound on'} aria-label={soundOn ? 'Mute' : 'Turn sound on'}>
+        {soundOn && !silent ? <IoVolumeHighOutline size={16} /> : <IoVolumeMuteOutline size={16} />}
       </button>
     </div>
   )

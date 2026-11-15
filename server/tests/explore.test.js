@@ -40,7 +40,7 @@ const fake = http.createServer((rq, rs) => {
     seenAuth.push('pixabay:' + u.searchParams.get('key'))
     rs.end(JSON.stringify({ hits: Array.from({ length: per }, (_, i) => ({
       id: Number(`${page}${i}`), pageURL: 'https://pixabay.com/videos/x', user: 'Ravi', user_id: 7,
-      videos: { medium: { url: `https://cdn.pixabay.com/${q}-${page}-${i}-m.mp4`, width: i % 2 ? 720 : 1280, height: i % 2 ? 1280 : 720, thumbnail: 'https://cdn.pixabay.com/t.jpg' }, small: { url: 'https://cdn.pixabay.com/s.mp4', width: 640, height: 360 } }
+      videos: { medium: { url: `https://cdn.pixabay.com/${q}-${page}-${i}-m.mp4`, width: i % 2 ? 720 : 1280, height: i % 2 ? 1280 : 720, thumbnail: 'https://cdn.pixabay.com/t.jpg' }, small: { url: `https://cdn.pixabay.com/${q}-${page}-${i}-s.mp4`, width: i % 2 ? 720 : 1280, height: i % 2 ? 1280 : 720, thumbnail: 'https://cdn.pixabay.com/t.jpg' } }
     })) }))
   } else if (u.pathname === '/pixabay/api/') {
     rs.end(JSON.stringify({ hits: Array.from({ length: per }, (_, i) => ({ id: Number(`${page}${i}`), pageURL: 'https://pixabay.com/photos/x', user: 'Mia', user_id: 9, webformatURL: 'https://cdn.pixabay.com/w.jpg', largeImageURL: `https://cdn.pixabay.com/${q}-${page}-${i}-l.jpg`, imageWidth: 800, imageHeight: 1200 })) }))

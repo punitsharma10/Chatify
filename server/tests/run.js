@@ -41,6 +41,7 @@ const env = {
     SCHEDULER_TICK_MS : '1000',
     // Explore / Reels fill-up uses a fake Pexels server started by tests/explore.test.js
     PEXELS_API_KEY : 'test-key',
+    PIXABAY_API_KEY : '', // never use a real key from .env in tests
     PEXELS_API_BASE : 'http://localhost:5099',
     TEST_API : `http://localhost:${PORT}`
 }
