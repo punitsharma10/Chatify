@@ -347,8 +347,10 @@ const Composer = ({ onSendText, onSendFiles, onSendVoice, onTyping, reply, editi
 
 /* ---------- the conversation ---------- */
 
-const DirectThread = () => {
-  const { threadId } = useParams()
+// embedded: shown inside the floating Messages popup (threadId given, "back" returns to the popup's list)
+const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
+  const params = useParams()
+  const threadId = givenId || params.threadId
   const navigate = useNavigate()
   const user = useMe()
   const me = user._id
@@ -365,7 +367,8 @@ const DirectThread = () => {
   const [forwarding, setForwarding] = useState(null)
 
   useEffect(() => { setDetails(false); setReply(null); setEditing(null) }, [threadId])
-  useEffect(() => { if (t.error === 'removed') navigate('/pixify/direct', { replace : true }) }, [t.error, navigate])
+  const leave = () => (embedded ? onBack?.() : navigate('/pixify/direct'))
+  useEffect(() => { if (t.error === 'removed') { if (embedded) onBack?.(); else navigate('/pixify/direct', { replace : true }) } }, [t.error, navigate, embedded, onBack])
 
   const people = useMemo(() => {
     const map = { [me] : { _id : me, name : user.name, username : user.username, profile_pic : user.profile_pic } }
@@ -445,7 +448,7 @@ const DirectThread = () => {
   const deleteChat = () => setConfirm({
     title : thread?.status === 'request' ? 'Delete request?' : 'Delete chat?',
     text : 'This removes the conversation for you. Other people in it will still see it.', action : 'Delete',
-    run : async () => { try { await api.post(`/dm/threads/${threadId}/delete`); navigate('/pixify/direct') } catch (e) { notifyError(e.message) } },
+    run : async () => { try { await api.post(`/dm/threads/${threadId}/delete`); leave() } catch (e) { notifyError(e.message) } },
   })
   const block = (blockIt) => {
     const run = async () => {
@@ -459,7 +462,7 @@ const DirectThread = () => {
   }
 
   if (t.loading && !thread) return <div className='flex h-full items-center justify-center'><span className='h-8 w-8 animate-spin rounded-full border-2 border-px-border border-t-px-text' /></div>
-  if (t.error && !thread) return <div className='flex h-full flex-col items-center justify-center gap-2 p-6 text-center'><p className='font-semibold'>{t.error}</p><button onClick={() => navigate('/pixify/direct')} className='text-sm font-semibold text-px-blue'>Back to messages</button></div>
+  if (t.error && !thread) return <div className='flex h-full flex-col items-center justify-center gap-2 p-6 text-center'><p className='font-semibold'>{t.error}</p><button onClick={leave} className='text-sm font-semibold text-px-blue'>Back to messages</button></div>
   if (!thread) return null
 
   const peer = thread.peer
@@ -500,9 +503,9 @@ const DirectThread = () => {
 
   return (
     <div className='flex h-full min-h-0'>
-      <div className={`flex h-full min-w-0 flex-1 flex-col ${details ? 'max-lg:hidden' : ''}`}>
-        <header className='flex h-[75px] shrink-0 items-center gap-3 border-b border-px-border px-4 max-md:h-[60px]'>
-          <button onClick={() => navigate('/pixify/direct')} className='md:hidden' aria-label='Back'><IoChevronBack size={28} /></button>
+      <div className={`flex h-full min-w-0 flex-1 flex-col ${details ? (embedded ? 'hidden' : 'max-lg:hidden') : ''}`}>
+        <header className={`flex shrink-0 items-center gap-3 border-b border-px-border px-4 ${embedded ? 'h-[60px]' : 'h-[75px] max-md:h-[60px]'}`}>
+          <button onClick={leave} className={embedded ? '' : 'md:hidden'} aria-label='Back'><IoChevronBack size={embedded ? 24 : 28} /></button>
           <button onClick={() => (thread.isGroup ? setDetails(true) : navigate(`/pixify/u/${peer.username || peer._id}`))} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
             <ThreadAvatar thread={thread} size={44} />
             <span className='min-w-0'>

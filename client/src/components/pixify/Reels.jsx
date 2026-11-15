@@ -187,7 +187,7 @@ const Reel = ({ post : initial, onHidden }) => {
           <Info post={post} light />
         </div>
         {/* phones: actions over the video */}
-        <div className='absolute bottom-24 right-2 text-white drop-shadow md:hidden'>
+        <div className='absolute bottom-36 right-2 text-white drop-shadow md:hidden'>
           <Actions actions={actions} onComment={() => setComments(true)} onMore={() => setMenu(true)} />
         </div>
       </div>
