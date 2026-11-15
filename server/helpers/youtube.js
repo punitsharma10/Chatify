@@ -1,10 +1,12 @@
-// Optional: YouTube Shorts for Pixify Reels and Explore (real short videos with sound), via the free YouTube Data API.
+// YouTube Shorts keep Pixify Reels and Explore going after your users' posts run out (real short videos with sound),
+// via the free YouTube Data API. Without a key, Reels and Explore end when your users' posts run out.
 // Free, no card: create a Google Cloud project, enable "YouTube Data API v3", create an API key, and add
 // YOUTUBE_API_KEY=... to server/.env. The free quota is 10,000 units a day and one search costs 100, so results
 // are cached for 24 hours and each search returns 50 Shorts (one search fills ~6 pages of Reels).
 // YouTube's terms: Shorts play in YouTube's own embedded player, with the channel credited.
 
-const { TOPICS } = require('./pexels')
+// topics take turns so every page is different
+const TOPICS = ['nature', 'travel', 'food', 'city', 'ocean', 'mountains', 'animals', 'dance', 'sports', 'fashion', 'cars', 'art', 'coffee', 'sunset', 'beach', 'music', 'fitness', 'flowers', 'street', 'architecture']
 
 const PER_SEARCH = 50
 const CACHE_MS = 24 * 60 * 60 * 1000
@@ -90,9 +92,9 @@ const shorts = async (offset, count) => {
     return out
 }
 
-// Reels page k (1, 2, ...): `per` Shorts. Explore page k: `per` Shorts for the tall tiles (from the second half of
-// each search, so Explore and Reels don't start with the same videos).
+// Reels page k (1, 2, ...): `per` Shorts. Explore page k: `per` Shorts, starting halfway into the first search so
+// Explore doesn't open with the same videos as Reels (both reuse the same cached searches, saving quota).
 const reels = (k, per = 8) => shorts((k - 1) * per, per)
-const exploreShorts = (k, per = 5) => shorts(Math.floor((k - 1) / 5) * PER_SEARCH + 25 + ((k - 1) % 5) * per, per).catch(() => [])
+const explore = (k, per = 24) => shorts(25 + (k - 1) * per, per)
 
-module.exports = { enabled, reels, exploreShorts, shorts, PER_SEARCH }
+module.exports = { enabled, reels, explore, PER_SEARCH, TOPICS }

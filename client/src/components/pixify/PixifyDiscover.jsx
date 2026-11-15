@@ -5,7 +5,7 @@ import Avatar from '../Avatar'
 import { api, enc, compact, usePaged, useOnVisible } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { recentSearches, addRecentSearch, removeRecentSearch } from '../social/extras'
-import { MediaThumb, AutoVideo, RichText, Modal } from '../social/common'
+import { MediaThumb, AutoVideo, RichText } from '../social/common'
 import YouTubeVideo from '../social/YouTubeVideo'
 import { usePixify } from './PixifyLayout'
 import { PostView, usePostActions, handleOf } from './Post'
@@ -28,10 +28,10 @@ const exploreBlocks = (items) => {
   return out
 }
 
-// "Photo by X on Pixabay / Pexels" (both ask apps to credit them)
-export const PexelsCredit = ({ post, className = '' }) => (
+// "Channel name · YouTube" on a YouTube Short (links to the Short on YouTube)
+export const ShortCredit = ({ post, className = '' }) => (
   <a href={post.external.link} target='_blank' rel='noopener noreferrer' onClick={(e) => e.stopPropagation()} className={`hover:underline ${className}`}>
-    {post.external.source === 'YouTube' ? <>{post.external.by} · YouTube</> : <>{post.media[0].kind === 'video' ? 'Video' : 'Photo'} by {post.external.by} on {post.external.source}</>}
+    {post.external.by} · YouTube
   </a>
 )
 
@@ -40,11 +40,9 @@ export const PixifyExplore = () => {
   const navigate = useNavigate()
   const paged = usePaged(`/explore?v=${version}`)
   const more = useOnVisible(paged.loadMore, !paged.done && !paged.loading)
-  const [photo, setPhoto] = useState(null) // a Pexels photo opened full size
   const open = (p) => {
-    // videos open in the Reels player (that reel first, then more); photos open the post
+    // videos and YouTube Shorts open in the Reels player (that one first, then more); photos open the post
     if (p.isReel || p.media?.[0]?.kind === 'video') return navigate('/pixify/reels', { state : { start : p } })
-    if (p.external) return setPhoto(p)
     navigate(`/pixify/p/${p._id}`)
   }
   return (
@@ -72,14 +70,8 @@ export const PixifyExplore = () => {
       </div>
       {!paged.loading && !paged.items.length && <p className='py-20 text-center text-sm text-px-muted'>Nothing to explore yet. Posts from public accounts show up here.</p>}
       {paged.done && paged.items.length > 0 && <p className='py-8 text-center text-sm text-px-muted'>You've seen everything for now.</p>}
-      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some photos and videos are provided by {[...new Set(paged.items.filter((p) => p.external).map((p) => p.external.source))].map((src, i) => <React.Fragment key={src}>{i > 0 && ' and '}<a href={src === 'Pixabay' ? 'https://pixabay.com' : src === 'YouTube' ? 'https://www.youtube.com' : 'https://www.pexels.com'} target='_blank' rel='noopener noreferrer' className='underline'>{src}</a></React.Fragment>)}</p>}
+      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some videos are Shorts from <a href='https://www.youtube.com' target='_blank' rel='noopener noreferrer' className='underline'>YouTube</a></p>}
       <div ref={more} />
-      {photo && (
-        <Modal onClose={() => setPhoto(null)} label='Photo' className='flex max-h-[92vh] max-w-[92vw] flex-col items-center gap-2'>
-          <img src={photo.media[0].url} alt='' className='max-h-[85vh] max-w-[90vw] rounded object-contain' />
-          <PexelsCredit post={photo} className='text-sm text-white' />
-        </Modal>
-      )}
     </div>
   )
 }
@@ -112,7 +104,7 @@ const Reel = ({ post : initial }) => {
         <div className='pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pr-16 text-white'>
           <div className='pointer-events-auto flex items-center gap-2'>
             {post.external
-              ? <span className='flex items-center gap-2 text-sm font-semibold'><Avatar width={32} height={32} name={post.author.name} /><PexelsCredit post={post} /></span>
+              ? <span className='flex items-center gap-2 text-sm font-semibold'><Avatar width={32} height={32} name={post.author.name} /><ShortCredit post={post} /></span>
               : <Link to={`/pixify/u/${post.author.username || post.author._id}`} className='flex items-center gap-2 text-sm font-semibold'>
                   <Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} />{handleOf(post.author)}
                 </Link>}

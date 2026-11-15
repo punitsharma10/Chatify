@@ -215,9 +215,9 @@ const feed = handle(async (req) => {
 
 // Pixify Explore (photos + reels) and Reels (videos), Instagram-style: posts from everyone with a public account
 // (plus people you follow), ranked by likes, comments and plays with newer posts first, and endless: when everyone's
-// posts have been shown, free stock photos / videos from Pexels continue (only if PEXELS_API_KEY is set).
-// Paging cursor (?before=): "p:N" = page N of our posts, "x:K" = page K from Pexels.
-const pexels = require('../helpers/stock') // Pixabay or Pexels, whichever key is set
+// posts have been shown, YouTube Shorts continue (only if YOUTUBE_API_KEY is set).
+// Paging cursor (?before=): "p:N" = page N of our posts, "x:K" = page K of YouTube Shorts.
+const youtube = require('../helpers/youtube')
 const explore = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'pixify')
     const reels = req.query.reels === '1'
@@ -227,10 +227,10 @@ const explore = handle(async (req) => {
     if (cursor.startsWith('x:')) {
         const k = Math.max(1, parseInt(cursor.slice(2), 10) || 1)
         try {
-            const posts = reels ? await pexels.reels(k, per) : await pexels.explore(k, per)
+            const posts = reels ? await youtube.reels(k, per) : await youtube.explore(k, per)
             return { posts, next : posts.length && k < 500 ? `x:${k + 1}` : null }
         } catch (error) {
-            console.error('[stock media]', error.message)
+            console.error('[youtube]', error.message)
             return { posts : [], next : null }
         }
     }
@@ -255,7 +255,7 @@ const explore = handle(async (req) => {
         { $project : { _score : 0 } }
     ])
     const posts = await S.serializePosts(raw, ctx)
-    const next = raw.length === per ? `p:${page + 1}` : pexels.enabled() ? 'x:1' : null
+    const next = raw.length === per ? `p:${page + 1}` : youtube.enabled() ? 'x:1' : null
     return { posts, next,  }
 })
 
