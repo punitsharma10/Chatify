@@ -86,10 +86,10 @@ const useSuggestions = () => {
   return people
 }
 
-const SuggestionCards = ({ people }) => {
+const SuggestionCards = ({ people, className = '' }) => {
   if (!people?.length) return null
   return (
-    <section className='border-b border-px-border px-4 py-4 sm:px-0'>
+    <section className={`border-b border-px-border px-4 py-4 sm:px-0 ${className}`}>
       <p className='mb-3 text-sm font-semibold'>Suggested for you</p>
       <div className='flex gap-3 overflow-x-auto pb-1 scrollbar-none'>
         {people.slice(0, 10).map((p) => (
@@ -124,7 +124,7 @@ const PixifyHome = () => {
     <div className='mx-auto flex max-w-[935px] justify-center gap-16 px-0 md:pt-6 lg:px-4'>
       <div className='w-full max-w-[470px]'>
         <StoriesBar />
-        {feed.items.length > 0 && suggestions?.length > 0 && feed.items.length < 3 && <SuggestionCards people={suggestions} />}
+        {feed.items.length > 0 && suggestions?.length > 0 && feed.items.length < 3 && <SuggestionCards people={suggestions} className='lg:hidden' />}
         <div className='mt-2'>
           {feed.items.map((p) => <PostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id))} />)}
         </div>
