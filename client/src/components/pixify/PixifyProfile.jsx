@@ -14,6 +14,7 @@ import { MediaThumb, PeopleModal, ActionSheet, RichText } from '../social/common
 import { ReportSheet } from '../social/extras'
 import { FollowButton } from './PixifyHome'
 import { usePixify } from './PixifyLayout'
+import { HighlightsRow } from './Highlights'
 
 // 3-column grid of posts (hover shows likes / comments)
 export const PostGrid = ({ paged, empty }) => {
@@ -29,7 +30,7 @@ export const PostGrid = ({ paged, empty }) => {
               : p.isReel ? <IoFilmOutline className='absolute right-2 top-2 text-white drop-shadow' size={18} /> : null}
             {p.isReel && p.views > 0 && <span className='absolute bottom-1.5 left-2 flex items-center gap-1 text-xs font-semibold text-white drop-shadow'><IoPlay size={12} />{compact(p.views)}</span>}
             <span className='absolute inset-0 hidden items-center justify-center gap-6 bg-black/35 font-bold text-white group-hover:flex'>
-              <span className='flex items-center gap-1.5'><IoHeart size={20} />{compact(p.reactionCount)}</span>
+              {!(p.hideLikes && !p.mine) && <span className='flex items-center gap-1.5'><IoHeart size={20} />{compact(p.reactionCount)}</span>}
               {!p.commentsOff && <span className='flex items-center gap-1.5'><IoChatbubble size={19} className='-scale-x-100' />{compact(p.commentCount)}</span>}
             </span>
           </Link>
@@ -140,8 +141,11 @@ const PixifyProfile = () => {
         <p className='font-semibold'>{profile.name}{profile.pronouns && <span className='ml-2 font-normal text-px-muted'>{profile.pronouns}</span>}</p>
         {profile.bio && <RichText text={profile.bio} app='pixify' className='block' />}
         {profile.website && <a href={profile.website} target='_blank' rel='noopener noreferrer nofollow' className='font-semibold text-[#00376b] dark:text-[#e0f1ff]'>{profile.website.replace(/^https?:\/\//, '')}</a>}
+        {profile.followsMe && <p className='mt-1 text-xs text-px-muted'>Follows you</p>}
         {profile.followedBy?.length > 0 && <p className='mt-1 text-xs text-px-muted'>Followed by {profile.followedBy.map((p) => p.username).join(', ')}</p>}
       </div>
+      {/* story highlights (Instagram: round circles under the bio) */}
+      {(profile.canView || isMe) && <HighlightsRow key={`${profile._id}:${version}`} profile={profile} isMe={isMe} />}
       <div className='mt-4 flex justify-around border-t border-px-border py-3 text-sm md:hidden'>
         <Stat n={profile.posts} label='posts' />
         <Stat n={profile.followers} label='followers' onClick={profile.canView ? () => openList('followers') : null} />
@@ -197,9 +201,13 @@ const PixifyProfile = () => {
           { label : 'Edit profile', onClick : () => navigate('/pixify/edit') },
           { label : 'Your activity (likes)', onClick : () => navigate('/pixify/activity') },
           { label : 'Archive', onClick : () => navigate('/pixify/archive') },
+          { label : 'Stories archive', onClick : () => navigate('/pixify/archive/stories') },
+          { label : 'Close friends', onClick : () => navigate('/pixify/close-friends') },
           { label : 'Saved', onClick : () => setTab('saved') },
           { label : 'Favorites', onClick : () => navigate('/pixify/people/favorites') },
           { label : 'Muted accounts', onClick : () => navigate('/pixify/people/muted') },
+          { label : 'Scheduled posts', onClick : () => navigate('/pixify/scheduled') },
+          { label : 'Hidden words', onClick : () => navigate('/pixify/hidden-words') },
         ]} />
       )}
       {menu && (
@@ -233,8 +241,12 @@ export const PixifyEditProfile = () => {
 
   useEffect(() => {
     // the profile in Redux may be loaded after this screen opens
+    if (!me._id) return
+    setForm((f) => ({ ...f, name : f.name || me.name || '' }))
+    setUsername((u) => u || me.username || '')
+    setPhoto((p) => p || me.profile_pic || '')
     api.get(`/users/${me._id}?app=pixify`).then((r) => setForm((f) => ({ ...f, bio : r.profile.bio, website : r.profile.website, pronouns : r.profile.pronouns || '', private : r.profile.private }))).catch(() => {})
-  }, [me._id])
+  }, [me._id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = async (f) => {
     if (!f) return

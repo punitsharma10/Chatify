@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { IoCamera, IoPencil, IoChatbubbleEllipses, IoHome, IoLocationSharp, IoBriefcase, IoTime, IoSearchOutline, IoCloseCircle, IoArrowBack, IoPeople, IoSchool, IoHeart, IoLink, IoGift, IoEllipsisHorizontal, IoHandLeft } from 'react-icons/io5'
+import { IoCamera, IoPencil, IoChatbubbleEllipses, IoHome, IoLocationSharp, IoBriefcase, IoTime, IoSearchOutline, IoCloseCircle, IoArrowBack, IoPeople, IoSchool, IoHeart, IoLink, IoGift, IoEllipsisHorizontal, IoHandLeft, IoAt, IoFlag } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, enc, longAgo, usePaged, useOnVisible } from '../../helpers/social'
 import uploadFile from '../../helpers/uploadFile'
@@ -12,7 +12,7 @@ import { ReportSheet } from '../social/extras'
 import { APPS } from '../../helpers/apps'
 import { AppMark } from '../apps/AppLogos'
 import { useConnectify, Card, SideLink } from './ConnectifyLayout'
-import { CxPostCard } from './CxPost'
+import { CxPostCard, removeHidden } from './CxPost'
 import { FriendButton, CreatePostCard } from './ConnectifyHome'
 import { SHORTCUTS } from './ConnectifyMore'
 
@@ -140,7 +140,7 @@ const Intro = ({ profile, onEdit }) => (
       {profile.relationship && <li className='flex items-center gap-3'><IoHeart className='text-cx-muted' size={20} />{RELATIONSHIPS[profile.relationship]}</li>}
       {profile.birthday && <li className='flex items-center gap-3'><IoGift className='text-cx-muted' size={20} />Birthday: {birthdayText(profile.birthday)}</li>}
       {profile.website && <li className='flex items-center gap-3'><IoLink className='text-cx-muted' size={20} /><a href={profile.website} target='_blank' rel='noopener noreferrer nofollow' className='truncate text-cx-blue hover:underline'>{profile.website.replace(/^https?:\/\//, '')}</a></li>}
-      {profile.username && <li className='flex items-center gap-3'><IoLocationSharp className='text-cx-muted' size={20} />@{profile.username}</li>}
+      {profile.username && <li className='flex items-center gap-3'><IoAt className='text-cx-muted' size={20} />@{profile.username}</li>}
       <li className='flex items-center gap-3'><IoTime className='text-cx-muted' size={20} />Joined {new Date(profile.joinedAt).toLocaleDateString(undefined, { month : 'long', year : 'numeric' })}</li>
     </ul>
     {profile.self && <button onClick={onEdit} className='mt-4 h-9 w-full rounded-md bg-cx-input font-semibold hover:brightness-95'>Edit details</button>}
@@ -241,7 +241,7 @@ export const ConnectifyProfile = () => {
             </div>
             <div className='min-w-0 flex-1'>
               {profile.self && <CreatePostCard />}
-              {posts.items.map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => posts.setItems((l) => l.filter((x) => x._id !== d._id))} />)}
+              {posts.items.map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => posts.setItems((l) => l.filter((x) => x._id !== d._id))} onHidden={removeHidden(posts.setItems)} />)}
               {posts.loading && <Spinner />}
               {!posts.loading && !posts.items.length && <Card className='p-6 text-center text-cx-muted'>No posts available</Card>}
               <div ref={more} />
@@ -350,11 +350,14 @@ const NOTE = {
   group_join_accept : 'approved your request to join',
   event_invite : 'invited you to',
   event_going : 'is going to your event',
+  page_follow : 'started following your Page',
 }
 
 // where tapping a notification goes
 const noteTarget = (n) => {
-  if (n.group && ['group_invite', 'group_join_request', 'group_join_accept'].includes(n.type)) return `/connectify/groups/${n.group._id}`
+  if (n.group && n.type === 'group_join_request') return `/connectify/groups/${n.group._id}?tab=requests`
+  if (n.group && ['group_invite', 'group_join_accept'].includes(n.type)) return `/connectify/groups/${n.group._id}`
+  if (n.page) return `/connectify/pages/${n.page._id}`
   if (n.event) return `/connectify/events/${n.event._id}`
   if (n.type === 'poke') return '/connectify/pokes'
   return n.post ? `/connectify/p/${n.post._id}` : userLink(n.actor)
@@ -394,11 +397,12 @@ export const ConnectifyNotifications = () => {
               <Avatar width={56} height={56} name={n.actor.name} imageUrl={n.actor.profile_pic} />
               {n.reaction && <span className='absolute -bottom-1 -right-1'><ReactionIcon type={n.reaction} size={24} /></span>}
               {['friend_request', 'friend_accept'].includes(n.type) && <span className='absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-cx-blue text-white ring-2 ring-cx-card'><IoPeople size={15} /></span>}
-              {['comment', 'reply', 'mention'].includes(n.type) && <span className='absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#45bd62] text-white ring-2 ring-cx-card'><IoChatbubbleEllipses size={14} /></span>}
+              {n.type === 'page_follow' && <span className='absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#f7923b] text-white ring-2 ring-cx-card'><IoFlag size={14} /></span>}
+              {['comment', 'reply', 'mention'].includes(n.type) &&<span className='absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#45bd62] text-white ring-2 ring-cx-card'><IoChatbubbleEllipses size={14} /></span>}
             </Link>
             <div className='min-w-0 flex-1'>
               <button onClick={() => navigate(noteTarget(n))} className='text-left text-[15px]'>
-                <b>{n.actor.name}</b> {NOTE[n.type] || ''} {n.group && <b>{n.group.name}</b>}{n.event && <b>{n.event.title}</b>} {n.text && <span>"{n.text.slice(0, 100)}"</span>}
+                <b>{n.actor.name}</b> {NOTE[n.type] || ''} {n.group && <b>{n.group.name}</b>}{n.event && <b>{n.event.title}</b>}{n.page && <b>{n.page.name}</b>} {n.text && <span>"{n.text.slice(0, 100)}"</span>}
                 {n.post?.text && ['react', 'share'].includes(n.type) && <span className='text-cx-muted'>: {n.post.text.slice(0, 60)}</span>}
               </button>
               <p className={`text-[13px] ${n.read ? 'text-cx-muted' : 'font-semibold text-cx-blue'}`}>{longAgo(n.createdAt)}</p>

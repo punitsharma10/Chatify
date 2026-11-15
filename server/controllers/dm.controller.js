@@ -197,6 +197,15 @@ const broadcastThread = async (thread, extraUserIds = []) => {
     for (const id of extraUserIds) emitDm(id, { type : 'thread-remove', threadId : String(thread._id) })
 }
 
+// `recipient` now follows / is friends with `sender`: their 1:1 message request moves to the inbox (Instagram / Messenger)
+const promoteRequest = async (recipient, sender, app = 'pixify') => {
+    const thread = await DmThreadModel.findOne({ pairKey : pairKeyOf(recipient, sender, app) }).lean()
+    const m = thread && memberOf(thread, recipient)
+    if (!m || m.status !== 'request') return
+    const updated = await DmThreadModel.findOneAndUpdate({ _id : thread._id, 'members.userId' : recipient }, { $set : { 'members.$.status' : 'inbox' } }, { new : true }).lean()
+    if (updated) await broadcastThread(updated)
+}
+
 /* ---------- sending ---------- */
 
 const cleanMedia = (media) => {
@@ -718,5 +727,5 @@ module.exports = {
     markRead, accept, hide, mute, updateGroup, addMembers, removeMember, setAdmin, leave,
     editMessage, unsend, react, forward, setNote, notes,
     // used elsewhere
-    unreadCounts, acceptedBetween, loadThread, memberOf
+    unreadCounts, acceptedBetween, loadThread, memberOf, promoteRequest
 }

@@ -126,7 +126,7 @@ export const MediaCarousel = ({ media, aspect, onDoubleClick, className = '', fi
           <div key={idx} className='h-full w-full shrink-0'>
             {m.kind === 'video'
               ? (Math.abs(idx - i) <= 1 ? <AutoVideo src={m.url} className='h-full w-full' fit={fit} /> : null)
-              : <img src={thumbUrl(m.url, 1080)} alt='' loading='lazy' draggable={false} className={`h-full w-full ${fit}`} />}
+              : <img src={thumbUrl(m.url, 1080)} alt={m.alt || ''} loading='lazy' draggable={false} className={`h-full w-full ${fit}`} />}
           </div>
         ))}
       </div>

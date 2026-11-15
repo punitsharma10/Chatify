@@ -51,7 +51,15 @@ const viewersOf = (status) => [...new Set([...(status.audience || []), ...(statu
 const canSeeStatus = (owner, status, viewerId) => {
     if (String(owner._id) === String(viewerId)) return true
     if (hasBlocked(owner, viewerId)) return false
-    return viewersOf(status).includes(String(viewerId))
+    if (!status.closeFriends) return viewersOf(status).includes(String(viewerId))
+    // a "Close friends" story: in Chats / Connectify as usual, in Pixify only for my current close friends
+    return seesInOtherApps(status, viewerId) || (inList(status.appAudience?.pixify, viewerId) && isCloseFriend(owner, viewerId))
 }
 
-module.exports = { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus }
+const inList = (list, id) => (list || []).some((x) => String(x) === String(id))
+// is `viewerId` on the owner's Pixify Close friends list (checked when listing / viewing, so removal hides at once)
+const isCloseFriend = (owner, viewerId) => inList(owner.pixify?.closeFriends, viewerId)
+// shared with `viewerId` through Chats or Connectify (not only Pixify)
+const seesInOtherApps = (status, viewerId) => inList(status.audience, viewerId) || inList(status.appAudience?.connectify, viewerId)
+
+module.exports = { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus, isCloseFriend, seesInOtherApps }

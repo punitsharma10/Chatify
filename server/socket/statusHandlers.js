@@ -3,11 +3,11 @@ const UserModel = require('../models/user.model')
 const StatusModel = require('../models/status.model')
 const { isValidId, isAllowedMediaUrl, publicUser, hasBlocked } = require('../helpers/chat')
 const { cleanEnvelope, viewEnvelope, keysOnlyFor, publicDevice } = require('../helpers/e2ee')
-const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus } = require('../helpers/status')
+const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus, isCloseFriend, seesInOtherApps } = require('../helpers/status')
 
 class UserError extends Error {}
 
-const serialize = (st, viewerId) => {
+const serialize = (st, viewerId, app = null) => {
     const mine = String(st.userId) === String(viewerId)
     return {
         _id : st._id,
@@ -19,6 +19,8 @@ const serialize = (st, viewerId) => {
         mediaUrl : st.mediaUrl || '',
         caption : st.caption || '',
         apps : appsOf(st),
+        // Pixify "Close friends" story (green ring); only flagged where it matters: Pixify, and to the owner
+        ...(st.closeFriends && (app === 'pixify' || mine) ? { closeFriends : true } : {}),
         ...(st.e2ee ? { e2ee : viewEnvelope(st.e2ee, viewerId) } : {}),
         createdAt : st.createdAt,
         expiresAt : st.expiresAt,
@@ -60,10 +62,12 @@ module.exports = function registerStatusHandlers(io, socket) {
     })
 
     // apps: where the story shows, any of ['chats', 'pixify', 'connectify'] (default: Chats only)
-    on('status-post', async ({ kind, text, background, font, mediaUrl, caption, e2ee, apps : rawApps } = {}) => {
+    // closeFriends: in Pixify, only my Close friends see it (Chats / Connectify sharing is unaffected)
+    on('status-post', async ({ kind, text, background, font, mediaUrl, caption, e2ee, apps : rawApps, closeFriends } = {}) => {
         if (!['text', 'image', 'video'].includes(kind)) throw new UserError('Invalid status')
         const apps = normalizeApps(rawApps)
         if (!apps) throw new UserError('Choose where to share this update')
+        if (closeFriends && !apps.includes('pixify')) throw new UserError('Close friends stories must be shared to Pixify')
         const shared = apps.some((a) => SHARED_APPS.includes(a))
         // Pixify / Connectify stories are readable by the server, so they can't carry an encrypted body
         if (e2ee && shared) throw new UserError("Updates shared to Pixify or Connectify can't be end-to-end encrypted")
@@ -101,7 +105,10 @@ module.exports = function registerStatusHandlers(io, socket) {
             doc.mediaUrl = mediaUrl
             doc.caption = c
         }
+        if (closeFriends === true) doc.closeFriends = true
         const st = await StatusModel.create(doc)
+        // Pixify keeps a private copy in my story archive (for highlights) after the story expires
+        if (apps.includes('pixify') && !doc.e2ee) await require('../controllers/highlights.controller').archiveStory(st.toObject()).catch((e) => console.error('[story-archive]', e))
         // people who can see it refresh their Updates list; my other tabs too
         for (const uid of [...viewersOf(doc), me]) io.to(String(uid)).emit('status-changed', { userId : me, apps })
         return { status : serialize(st.toObject(), me) }
@@ -118,7 +125,9 @@ module.exports = function registerStatusHandlers(io, socket) {
             StatusModel.find({ userId : meId, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).lean(),
             StatusModel.find({ ...sharedWithMe, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).limit(1000).lean()
         ])
-        const ownerIds = [...new Set(others.map((s) => String(s.userId)))]
+        // Pixify: people I still follow; Connectify: people who are still my friends (unfollow / unfriend hides it at once)
+        const still = app === 'pixify' ? new Set(await require('../helpers/social').followingIds(me)) : app === 'connectify' ? new Set(await require('../helpers/social').friendIds(me)) : null
+        const ownerIds = [...new Set(others.map((s) => String(s.userId)))].filter((id) => !still || still.has(id))
         const owners = await UserModel.find({ _id : { $in : ownerIds } }).select('-password').lean()
         const byId = Object.fromEntries(owners.map((u) => [String(u._id), u]))
         const muted = new Set((meUser.mutedStatuses || []).map(String))
@@ -128,9 +137,11 @@ module.exports = function registerStatusHandlers(io, socket) {
             const owner = byId[String(st.userId)]
             // statuses of people I blocked (or who blocked me) are hidden
             if (!owner || hasBlocked(meUser, owner._id) || !canSeeStatus(owner, st, me)) continue
+            // Close friends stories show in Pixify only while I'm on their list (removal hides them at once)
+            if (app === 'pixify' && st.closeFriends && !isCloseFriend(owner, me)) continue
             const key = String(owner._id)
             groups[key] = groups[key] || { user : publicUser(owner, meUser), statuses : [], muted : muted.has(key) }
-            groups[key].statuses.push(serialize(st, me))
+            groups[key].statuses.push(serialize(st, me, app))
         }
         const updates = Object.values(groups).map((g) => ({
             ...g,
@@ -138,7 +149,7 @@ module.exports = function registerStatusHandlers(io, socket) {
             lastAt : g.statuses[g.statuses.length - 1].createdAt
         })).sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt))
 
-        return { mine : mine.map((s) => serialize(s, me)), updates }
+        return { mine : mine.map((s) => serialize(s, me, app)), updates }
     })
 
     on('status-view', async ({ statusId } = {}) => {
@@ -148,6 +159,8 @@ module.exports = function registerStatusHandlers(io, socket) {
         if (String(st.userId) === me) return {}
         const [owner, meUser] = await Promise.all([loadUser(st.userId), loadUser(me)])
         if (!owner || !canSeeStatus(owner, st, me)) throw new UserError('This status is no longer available')
+        // a Close friends story seen only through Pixify: they must still follow the owner
+        if (st.closeFriends && !seesInOtherApps(st, me) && (await require('../helpers/social').followStatus(meId, st.userId)) !== 'active') throw new UserError('This status is no longer available')
         if ((st.viewers || []).some((v) => String(v.userId) === me)) return {}
         // like WhatsApp: with read receipts off, the owner doesn't learn that you viewed it
         const hidden = meUser?.privacy?.readReceipts === false
@@ -176,6 +189,8 @@ module.exports = function registerStatusHandlers(io, socket) {
         if (!isValidId(String(statusId))) throw new UserError('Status not found')
         const st = await StatusModel.findOneAndDelete({ _id : statusId, userId : meId }).lean()
         if (!st) throw new UserError('Status not found')
+        // deleting a story also takes it out of my Pixify story archive and highlights (like Instagram)
+        await require('../controllers/highlights.controller').unarchiveStory(meId, st._id).catch((e) => console.error('[story-archive]', e))
         for (const uid of [...viewersOf(st), me]) io.to(String(uid)).emit('status-changed', { userId : me, removed : String(st._id), apps : appsOf(st) })
         return {}
     })

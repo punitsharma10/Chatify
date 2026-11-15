@@ -111,7 +111,7 @@ export const usePaged = (url, key = 'posts') => {
       setState((s) => {
         const prev = reset ? [] : s.items
         const seen = new Set(prev.map((x) => x._id))
-        return { ...res, items : [...prev, ...(res[key] || []).filter((x) => !seen.has(x._id))], loading : false, done : !res.next, error : '' }
+        return { ...res, ...(res.count === undefined && !reset && s.count !== undefined ? { count : s.count } : {}), items : [...prev, ...(res[key] || []).filter((x) => !seen.has(x._id))], loading : false, done : !res.next, error : '' }
       })
     } catch (e) {
       if (g === gen.current) setState((s) => ({ ...s, loading : false, error : e.message }))

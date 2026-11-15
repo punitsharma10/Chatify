@@ -53,7 +53,7 @@ const Info = ({ post, light }) => (
     <p className={`mt-2 flex items-center gap-1.5 truncate text-xs ${light ? 'text-white/90' : 'text-px-muted'}`}>
       <IoMusicalNotes size={12} className='shrink-0' />
       <span className='truncate'>{post.external ? `${post.external.by} · Original audio` : `${handleOf(post.author)} · Original audio`}</span>
-      {post.views > 0 && !post.external && <span className='shrink-0'>· {compact(post.views)} plays</span>}
+      {post.views > 0 && !post.external && <span className='shrink-0'>· {compact(post.views)} {post.views === 1 ? 'play' : 'plays'}</span>}
     </p>
   </div>
 )
@@ -89,8 +89,8 @@ const Comments = ({ post, onClose, onAdded }) => {
         <div className='min-h-0 flex-1 overflow-y-auto px-4 py-2'>
           {list === null && <span className='mx-auto my-8 block h-6 w-6 animate-spin rounded-full border-2 border-px-border border-t-px-muted' />}
           {list?.length === 0 && <div className='py-12 text-center'><p className='text-xl font-bold'>No comments yet</p><p className='mt-1 text-sm text-px-muted'>Start the conversation.</p></div>}
-          {list?.filter((c) => !c.parent).map((c) => (
-            <div key={c._id} className='flex gap-3 py-2'>
+          {list?.filter((c) => !c.parent).flatMap((p) => [p, ...list.filter((r) => r.parent === p._id)]).map((c) => (
+            <div key={c._id} className={`flex gap-3 py-2 ${c.parent ? 'ml-10' : ''}`}>
               <Link to={userLink(c.author)} className='shrink-0'><Avatar width={32} height={32} name={c.author.name} imageUrl={c.author.profile_pic} /></Link>
               <div className='min-w-0 flex-1 text-sm'>
                 <p><Link to={userLink(c.author)} className='mr-1 font-semibold'>{handleOf(c.author)}</Link><span className='text-xs text-px-muted'>{shortAgo(c.createdAt)}</span></p>
@@ -221,8 +221,9 @@ export const PixifyReels = () => {
   const paged = usePaged(`/explore?reels=1&v=${version}`)
   const scroller = useRef(null)
   // a reel tapped in Explore plays first, then the endless list
+  const [gone, setGone] = useState(() => new Set())
   const start = state?.start
-  const items = start ? [start, ...paged.items.filter((p) => p._id !== start._id)] : paged.items
+  const items = (start ? [start, ...paged.items.filter((p) => p._id !== start._id)] : paged.items).filter((p) => !gone.has(p._id))
   const more = useOnVisible(paged.loadMore, !paged.done && !paged.loading)
   const step = (dir) => scroller.current?.scrollBy({ top : dir * scroller.current.clientHeight, behavior : 'smooth' })
 
@@ -240,13 +241,20 @@ export const PixifyReels = () => {
   return (
     <div className='relative h-full'>
       <div ref={scroller} className='h-full snap-y snap-mandatory overflow-y-auto bg-black scrollbar-none md:bg-px-bg'>
-        {items.map((p) => <div key={p._id} className='h-full'><Reel post={p} onHidden={(d) => paged.setItems((l) => l.filter((x) => x._id !== d._id))} /></div>)}
+        {items.map((p) => <div key={p._id} className='h-full'><Reel post={p} onHidden={(d) => setGone((s) => new Set([...s, d._id]))} /></div>)}
         {paged.loading && <div className='flex h-full items-center justify-center'><span className='h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white md:border-px-border md:border-t-px-text' /></div>}
         {!paged.loading && !items.length && (
           <div className='flex h-full flex-col items-center justify-center px-6 text-center text-white md:text-px-text'>
             <IoFilmOutline size={56} />
             <p className='mt-3 text-lg font-semibold'>No reels yet</p>
             <p className='mt-1 text-sm opacity-70'>Share a post with one video and it shows up here.</p>
+          </div>
+        )}
+        {!paged.loading && paged.done && items.length > 0 && (
+          <div className='flex h-full flex-col items-center justify-center px-6 text-center text-white md:text-px-text'>
+            <IoFilmOutline size={48} />
+            <p className='mt-3 text-lg font-semibold'>You've seen everything for now</p>
+            <p className='mt-1 text-sm opacity-70'>Check back later for new reels.</p>
           </div>
         )}
         <div ref={more} className='h-1' />

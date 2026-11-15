@@ -25,6 +25,8 @@ const statusSchema = new mongoose.Schema({
         connectify : { type : [{ type : ObjectId, ref : 'User' }], default : undefined }
     },
     shareAudience : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    // Pixify "Close friends" story: in Pixify only the owner's close friends (checked when listed / viewed) see it
+    closeFriends : { type : Boolean, default : undefined },
     // hidden = the viewer has read receipts off: counts as seen for them, but isn't shown to the owner
     viewers : [{ userId : { type : ObjectId, ref : 'User' }, at : Date, hidden : Boolean, _id : false }],
     expiresAt : { type : Date, required : true }

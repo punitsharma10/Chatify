@@ -10,7 +10,7 @@ import { PersonPhoto } from '../social/common'
 import { api, usePaged, useOnVisible } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { useConnectify, Card } from './ConnectifyLayout'
-import { CxPostCard } from './CxPost'
+import { CxPostCard, removeHidden } from './CxPost'
 
 const StoriesRow = () => {
   const user = useSelector((s) => s.user)
@@ -135,9 +135,9 @@ const ConnectifyHome = () => {
     <div className='mx-auto w-full max-w-[590px] px-0 py-4 sm:px-4'>
       <StoriesRow />
       <div className='mt-4'><CreatePostCard /></div>
-      {feed.items.slice(0, 2).map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((l) => l.filter((x) => x._id !== d._id))} />)}
+      {feed.items.slice(0, 2).map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((l) => l.filter((x) => x._id !== d._id))} onHidden={removeHidden(feed.setItems)} />)}
       <PeopleYouMayKnow />
-      {feed.items.slice(2).map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((l) => l.filter((x) => x._id !== d._id))} />)}
+      {feed.items.slice(2).map((p) => <CxPostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((l) => l.filter((x) => x._id !== d._id))} onHidden={removeHidden(feed.setItems)} />)}
       {feed.loading && [0, 1].map((i) => (
         <Card key={i} className='mb-4 p-4'>
           <div className='flex items-center gap-2'><span className='h-10 w-10 animate-pulse rounded-full bg-cx-input' /><span className='h-3 w-40 animate-pulse rounded bg-cx-input' /></div>

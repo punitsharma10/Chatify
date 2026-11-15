@@ -2,7 +2,9 @@ const { PostModel, CommentModel, FollowModel, FriendshipModel, NotificationModel
 
 // Removes someone's Pixify and Connectify data when their account is deleted.
 module.exports = async (userId) => {
-    const posts = (await PostModel.find({ author : userId }).select('_id').lean()).map((p) => p._id)
+    // Connectify Pages first: their Page posts move to another admin (or the Page goes when no admin is left)
+    await require('../controllers/pages.controller').cleanupUser(userId)
+    const posts =(await PostModel.find({ author : userId }).select('_id').lean()).map((p) => p._id)
     // comments they wrote: lower the comment counts on the posts they were on
     const comments = await CommentModel.find({ author : userId }).select('post').lean()
     const perPost = {}
@@ -12,6 +14,10 @@ module.exports = async (userId) => {
         PostModel.deleteMany({ author : userId }),
         CommentModel.deleteMany({ $or : [{ author : userId }, { post : { $in : posts } }] }),
         PostModel.updateMany({ 'reactions.userId' : userId }, { $pull : { reactions : { userId } } }),
+        // collab invites, poll votes and custom audiences that included them
+        PostModel.updateMany({ 'collaborators.userId' : userId }, { $pull : { collaborators : { userId } } }),
+        PostModel.updateMany({ audienceList : userId }, { $pull : { audienceList : userId } }),
+        PostModel.updateMany({ 'poll.options.votes' : userId }, { $pull : { 'poll.options.$[].votes' : userId } }),
         FollowModel.deleteMany({ $or : [{ follower : userId }, { following : userId }] }),
         FriendshipModel.deleteMany({ $or : [{ from : userId }, { to : userId }] }),
         NotificationModel.deleteMany({ $or : [{ user : userId }, { actor : userId }, { post : { $in : posts } }] })

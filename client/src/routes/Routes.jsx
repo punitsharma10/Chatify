@@ -12,12 +12,15 @@ import PixifyLayout from "../components/pixify/PixifyLayout";
 import PixifyHome from "../components/pixify/PixifyHome";
 import PixifyProfile, { PixifyEditProfile } from "../components/pixify/PixifyProfile";
 import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage, PixifyTag, PixifyArchive, PixifyActivity, PixifyPeopleList } from "../components/pixify/PixifyDiscover";
+import { PixifyPlace, PixifyScheduled, PixifyHiddenWords } from "../components/pixify/PixifyExtras";
 import PixifyNotifications from "../components/pixify/PixifyNotifications";
+import { PixifyStoryArchive, PixifyCloseFriends } from "../components/pixify/Highlights";
 import PixifyDirect, { DirectEmpty, DirectOpenUser } from "../components/pixify/direct/PixifyDirect";
 import DirectThread from "../components/pixify/direct/DirectThread";
 import ConnectifyLayout from "../components/connectify/ConnectifyLayout";
-import { ConnectifyGroups, ConnectifyGroup, ConnectifyEvents, ConnectifyEvent, ConnectifyMarket, ConnectifyListing, ConnectifyWatch, ConnectifyMemories, ConnectifySaved, ConnectifyTag, ConnectifyBirthdays, ConnectifyPokes } from "../components/connectify/ConnectifyMore";
+import { ConnectifyGroups, ConnectifyGroup, ConnectifyEvents, ConnectifyEvent, ConnectifyMarket, ConnectifyListing, ConnectifyWatch, ConnectifyMemories, ConnectifySaved, ConnectifyScheduled, ConnectifyTag, ConnectifyBirthdays, ConnectifyPokes } from "../components/connectify/ConnectifyMore";
 import ConnectifyHome from "../components/connectify/ConnectifyHome";
+import { ConnectifyPagesHub, ConnectifyPage } from "../components/connectify/CxPages";
 import { ConnectifyProfile, ConnectifyFriends, ConnectifyNotifications, ConnectifySearch, ConnectifyPostPage, ConnectifyMenu } from "../components/connectify/ConnectifyPages";
 
 const router = createBrowserRouter([
@@ -59,7 +62,12 @@ const router = createBrowserRouter([
                         { path : 'p/:postId', element : <PixifyPostPage/> },
                         { path : 'u/:handle', element : <PixifyProfile/> },
                         { path : 'tags/:tag', element : <PixifyTag/> },
+                        { path : 'places/:name', element : <PixifyPlace/> },
+                        { path : 'scheduled', element : <PixifyScheduled/> },
+                        { path : 'hidden-words', element : <PixifyHiddenWords/> },
                         { path : 'archive', element : <PixifyArchive/> },
+                        { path : 'archive/stories', element : <PixifyStoryArchive/> },
+                        { path : 'close-friends', element : <PixifyCloseFriends/> },
                         { path : 'activity', element : <PixifyActivity/> },
                         { path : 'people/:list', element : <PixifyPeopleList/> },
                         // Pixify Direct: Instagram-style messages (separate from Chats)
@@ -88,6 +96,8 @@ const router = createBrowserRouter([
                         { path : 'u/:handle', element : <ConnectifyProfile/> },
                         { path : 'groups', element : <ConnectifyGroups/> },
                         { path : 'groups/:groupId', element : <ConnectifyGroup/> },
+                        { path : 'pages', element : <ConnectifyPagesHub/> },
+                        { path : 'pages/:pageId', element : <ConnectifyPage/> },
                         { path : 'events', element : <ConnectifyEvents/> },
                         { path : 'events/:eventId', element : <ConnectifyEvent/> },
                         { path : 'marketplace', element : <ConnectifyMarket/> },
@@ -95,6 +105,7 @@ const router = createBrowserRouter([
                         { path : 'watch', element : <ConnectifyWatch/> },
                         { path : 'memories', element : <ConnectifyMemories/> },
                         { path : 'saved', element : <ConnectifySaved/> },
+                        { path : 'scheduled', element : <ConnectifyScheduled/> },
                         { path : 'tags/:tag', element : <ConnectifyTag/> },
                         { path : 'birthdays', element : <ConnectifyBirthdays/> },
                         { path : 'pokes', element : <ConnectifyPokes/> },

@@ -6,7 +6,7 @@ import { BsPinAngleFill } from 'react-icons/bs'
 import Avatar from '../Avatar'
 import { api, shortAgo, compact } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
-import { MediaCarousel, RichText, ActionSheet, PeopleModal, copyPostLink, pixifyAspect } from '../social/common'
+import { MediaCarousel, RichText, ActionSheet, PeopleModal, copyPostLink, pixifyAspect, Modal } from '../social/common'
 import { ReportSheet } from '../social/extras'
 import { usePixify } from './PixifyLayout'
 
@@ -14,7 +14,7 @@ const QUICK_EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', 
 
 // "Goa, India" under the username
 const PlaceLine = ({ post }) => (post.location
-  ? <Link to={`/pixify/search?q=${encodeURIComponent(post.location)}`} className='block truncate text-xs hover:opacity-60'>{post.location}</Link>
+  ? <Link to={`/pixify/places/${encodeURIComponent(post.location)}`} className='block truncate text-xs hover:opacity-60'>{post.location}</Link>
   : null)
 
 // person icon on the photo: shows who's tagged
@@ -31,6 +31,65 @@ export const TaggedBadge = ({ post }) => {
 
 const userLink = (p) => `/pixify/u/${p.username || p._id}`
 export const handleOf = (p) => p?.username || p?.name || ''
+
+// "ana and bea" / "ana and 2 others" for collab posts (accepted collaborators only)
+export const AuthorNames = ({ post, className = 'font-semibold hover:opacity-60' }) => {
+  const [open, setOpen] = useState(false)
+  const collabs = (post.collaborators || []).filter((c) => c.status === 'accepted')
+  if (!collabs.length) return <Link to={userLink(post.author)} className={className}>{handleOf(post.author)}</Link>
+  return (
+    <>
+      <Link to={userLink(post.author)} className={className}>{handleOf(post.author)}</Link>
+      <span> and </span>
+      {collabs.length === 1
+        ? <Link to={userLink(collabs[0])} className={className}>{handleOf(collabs[0])}</Link>
+        : <button onClick={() => setOpen(true)} className={className}>{collabs.length} others</button>}
+      {open && <PeopleModal title='Collaborators' app='pixify' people={[post.author, ...collabs]} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+// shown to someone invited to collaborate on a post
+export const CollabInvite = ({ actions }) => {
+  const { post, setPost } = actions
+  if (post.myCollab !== 'pending') return null
+  const answer = async (accept) => {
+    try { const r = await api.post(`/posts/${post._id}/collab`, { accept }); setPost((p) => ({ ...p, ...r.post, myCollab : accept ? 'accepted' : undefined })); notify(accept ? 'You are now a collaborator. It shows on your profile.' : 'Invite declined') } catch (e) { notifyError(e.message) }
+  }
+  return (
+    <div className='flex items-center gap-3 border-b border-px-border bg-px-raised px-4 py-3 text-sm'>
+      <span className='min-w-0 flex-1'><b>{handleOf(post.author)}</b> invited you to collaborate. The post will appear on your profile and be shared with your followers.</span>
+      <button onClick={() => answer(false)} className='h-8 shrink-0 rounded-lg bg-px-bg px-3 font-semibold ring-1 ring-px-border'>Decline</button>
+      <button onClick={() => answer(true)} className='h-8 shrink-0 rounded-lg bg-px-blue px-3 font-semibold text-white'>Accept</button>
+    </div>
+  )
+}
+
+// "View insights" for your own post
+const InsightsSheet = ({ post, onClose }) => {
+  const [data, setData] = useState(null)
+  useEffect(() => { api.get(`/posts/${post._id}/insights`).then((r) => setData(r.insights)).catch((e) => { notifyError(e.message); onClose() }) }, [post._id, onClose])
+  const Stat = ({ label, value }) => <div className='flex flex-col items-center rounded-lg bg-px-raised py-3'><span className='text-xl font-bold'>{compact(value || 0)}</span><span className='text-xs text-px-muted'>{label}</span></div>
+  return (
+    <Modal onClose={onClose} label='Post insights' className='w-[min(420px,94vw)] overflow-hidden rounded-xl bg-px-bg text-px-text'>
+      <div className='border-b border-px-border py-3 text-center font-semibold'>Post insights</div>
+      {!data ? <span className='mx-auto my-10 block h-6 w-6 animate-spin rounded-full border-2 border-px-border border-t-px-muted' /> : (
+        <div className='p-4'>
+          <p className='text-center text-sm text-px-muted'>Accounts reached</p>
+          <p className='mb-4 text-center text-3xl font-bold'>{compact(data.accountsReached)}</p>
+          <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
+            <Stat label='Likes' value={data.likes} />
+            <Stat label='Comments' value={data.comments} />
+            <Stat label='Saves' value={data.saves} />
+            <Stat label='Shares' value={data.shares} />
+            {data.plays !== undefined && <Stat label='Plays' value={data.plays} />}
+          </div>
+          <p className='mt-4 text-center text-xs text-px-muted'>Accounts reached counts the people who liked or commented. Only you can see insights.</p>
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 // like / save / delete / edit for one post, shared by the feed card and the post page
 export const usePostActions = (initial, { onDeleted } = {}) => {
@@ -83,6 +142,9 @@ export const PostMenu = ({ actions, onClose, onEdit, goToPost = true, onHidden }
   const [confirm, setConfirm] = useState(false)
   const [reporting, setReporting] = useState(false)
   const [unfollowed, setUnfollowed] = useState(false)
+  const [favorite, setFavorite] = useState(!!post.favoriteAuthor)
+  const [insightsOpen, setInsightsOpen] = useState(false)
+  if (insightsOpen) return <InsightsSheet post={post} onClose={onClose} />
   if (confirm) {
     return <ActionSheet title='Delete post?' onClose={onClose} items={[{ label : 'Delete', danger : true, onClick : remove }]} />
   }
@@ -97,11 +159,13 @@ export const PostMenu = ({ actions, onClose, onEdit, goToPost = true, onHidden }
       { label : post.archived ? 'Show on profile' : 'Archive', hidden : !post.mine, onClick : async () => { await tool(`/posts/${post._id}/archive`, { archive : !post.archived }, post.archived ? 'Shown on your profile' : 'Archived. Only you can see it.'); if (!post.archived) onHidden?.(post) } },
       { label : post.pinned ? 'Unpin from profile' : 'Pin to your profile', hidden : !post.mine || post.archived, onClick : () => tool(`/posts/${post._id}/pin`, { pin : !post.pinned }, post.pinned ? 'Unpinned' : 'Pinned to your profile') },
       { label : post.hideLikes ? 'Unhide like count' : 'Hide like count', hidden : !post.mine, onClick : () => update({ hideLikes : !post.hideLikes }) },
+      { label : 'View insights', hidden : !post.mine || post.scheduledFor, keepOpen : true, onClick : () => setInsightsOpen(true) },
       { label : 'Edit', hidden : !post.mine, onClick : onEdit },
+      { label : 'Remove me as collaborator', danger : true, hidden : post.myCollab !== 'accepted', onClick : async () => { try { const r = await api.post(`/posts/${post._id}/collab`, { leave : true }); setPost((p) => ({ ...p, ...r.post, myCollab : undefined })); notify('Removed from your profile'); onHidden?.(post) } catch (e) { notifyError(e.message) } } },
       { label : post.commentsOff ? 'Turn on commenting' : 'Turn off commenting', hidden : !post.mine, onClick : () => update({ commentsOff : !post.commentsOff }) },
       { label : 'Unfollow', danger : true, hidden : post.mine || unfollowed, onClick : async () => { try { await api.post(`/follow/${post.author._id}`, { follow : false }); setUnfollowed(true); notify(`Unfollowed ${handleOf(post.author)}`) } catch (e) { notifyError(e.message) } } },
-      { label : 'Add to favorites', hidden : post.mine, onClick : () => tool(`/favorites/${post.author._id}`, { favorite : true }, `Added ${handleOf(post.author)} to Favorites`) },
-      { label : 'Mute', hidden : post.mine, onClick : async () => { await tool(`/mute/${post.author._id}`, { mute : true }, `Muted ${handleOf(post.author)}. Their posts won't show in your feed.`); onHidden?.(post) } },
+      { label : favorite ? 'Remove from favorites' : 'Add to favorites', hidden : post.mine, onClick : async () => { const r = await tool(`/favorites/${post.author._id}`, { favorite : !favorite }, favorite ? `Removed ${handleOf(post.author)} from Favorites` : `Added ${handleOf(post.author)} to Favorites`); if (r) setFavorite(!favorite) } },
+      { label : 'Mute', hidden : post.mine, onClick : async () => { await tool(`/mute/${post.author._id}`, { mute : true }, `Muted ${handleOf(post.author)}. Their posts won't show in your feed.`); onHidden?.(post, 'author') } },
       { label : 'Not interested', hidden : post.mine || !onHidden, onClick : async () => { await tool(`/posts/${post._id}/hide`, { hide : true }, "You'll see fewer posts like this"); onHidden?.(post) } },
       { label : 'Go to post', hidden : !goToPost, onClick : () => navigate(`/pixify/p/${post._id}`) },
       { label : 'Share to...', onClick : () => sendToChat(post) },
@@ -193,7 +257,7 @@ export const PostCard = ({ post : initial, onDeleted, onHidden }) => {
         <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
         <div className='min-w-0 flex-1 text-sm'>
           <p className='truncate'>
-            <Link to={userLink(post.author)} className='font-semibold hover:opacity-60'>{handleOf(post.author)}</Link>
+            <AuthorNames post={post} />
             <span className='text-px-muted'> • {shortAgo(post.createdAt)}</span>
           </p>
           <PlaceLine post={post} />
@@ -247,7 +311,8 @@ const Comment = ({ c, onReply, onDelete, onLike, onPin }) => (
         {c.likeCount > 0 && <span className='font-semibold'>{c.likeCount} like{c.likeCount > 1 ? 's' : ''}</span>}
         {onReply && <button onClick={() => onReply(c)} className='font-semibold'>Reply</button>}
         {c.canPin && onPin && <button onClick={() => onPin(c)} className='hidden font-semibold group-hover:inline max-md:inline'>{c.pinned ? 'Unpin' : 'Pin'}</button>}
-        {c.canDelete && <button onClick={() => onDelete(c)} className='hidden font-semibold group-hover:inline'>Delete</button>}
+        {c.canDelete && <button onClick={() => onDelete(c)} className='hidden font-semibold group-hover:inline max-md:inline'>Delete</button>}
+        {c.hiddenByWords && <span title='Hidden from others because of your hidden words'>· Hidden</span>}
       </p>
     </div>
     <button onClick={() => onLike(c)} title={c.liked ? 'Unlike' : 'Like'} className='mt-1 shrink-0 self-start'>
@@ -285,7 +350,8 @@ export const PostView = ({ post : initial, onDeleted }) => {
       setReplyTo(null)
     } catch (err) { setText(t); notifyError(err.message) }
   }
-  const reply = (c) => { setReplyTo(c); setText(`@${handleOf(c.author)} `); input.current?.focus() }
+  // replies stay under the top comment; the @mention is the person you're answering
+  const reply = (c, to = c) => { setReplyTo(c); setText(`@${handleOf(to.author)} `); input.current?.focus() }
   const del = async (c) => {
     try {
       const r = await api.del(`/comments/${c._id}`)
@@ -315,10 +381,12 @@ export const PostView = ({ post : initial, onDeleted }) => {
   const repliesOf = (id) => (comments || []).filter((c) => c.parent === id)
 
   return (
+    <>
+    <CollabInvite actions={actions} />
     <div className='flex w-full flex-col bg-px-bg md:h-[min(88dvh,820px)] md:flex-row md:border md:border-px-border'>
       <header className='flex items-center gap-3 border-b border-px-border px-4 py-3 md:hidden'>
         <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
-        <div className='min-w-0 flex-1 text-sm'><Link to={userLink(post.author)} className='font-semibold'>{handleOf(post.author)}</Link><PlaceLine post={post} /></div>
+        <div className='min-w-0 flex-1 text-sm'><p className='truncate'><AuthorNames post={post} className='font-semibold' /></p><PlaceLine post={post} /></div>
         <button onClick={() => setMenu(true)} title='More options'><IoEllipsisHorizontal size={20} /></button>
       </header>
       <div className='relative flex min-w-0 items-center justify-center bg-black md:flex-[1.4]'>
@@ -329,14 +397,14 @@ export const PostView = ({ post : initial, onDeleted }) => {
       <div className='flex min-h-0 w-full flex-col md:w-[400px] md:max-w-[45%] md:border-l md:border-px-border'>
         <header className='hidden items-center gap-3 border-b border-px-border px-4 py-3 md:flex'>
           <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
-          <div className='min-w-0 flex-1 text-sm'><Link to={userLink(post.author)} className='font-semibold hover:opacity-60'>{handleOf(post.author)}</Link><PlaceLine post={post} /></div>
+          <div className='min-w-0 flex-1 text-sm'><p className='truncate'><AuthorNames post={post} /></p><PlaceLine post={post} /></div>
           <button onClick={() => setMenu(true)} title='More options'><IoEllipsisHorizontal size={20} /></button>
         </header>
         <div className='order-2 min-h-0 flex-1 overflow-y-auto px-4 py-2 md:order-none'>
           {post.text && (
             <div className='flex gap-3 py-2'>
               <Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} />
-              <div className='text-sm'>
+              <div className='min-w-0 flex-1 text-sm [overflow-wrap:anywhere]'>
                 <p><Link to={userLink(post.author)} className='mr-1 font-semibold'>{handleOf(post.author)}</Link><RichText text={post.text} app='pixify' linkClass='text-[#00376b] dark:text-[#e0f1ff]' /></p>
                 <p className='mt-1 text-xs text-px-muted'>{shortAgo(post.createdAt)}{post.editedAt ? ' · Edited' : ''}</p>
               </div>
@@ -352,7 +420,7 @@ export const PostView = ({ post : initial, onDeleted }) => {
                   <button onClick={() => setOpen((o) => ({ ...o, [c._id]: !o[c._id] }))} className='flex items-center gap-3 py-1 text-xs font-semibold text-px-muted'>
                     <span className='h-px w-6 bg-px-muted' />{open[c._id] ? 'Hide replies' : `View replies (${repliesOf(c._id).length})`}
                   </button>
-                  {open[c._id] && repliesOf(c._id).map((r) => <Comment key={r._id} c={r} onReply={post.commentsOff ? null : () => reply(c)} onDelete={del} onLike={likeComment} />)}
+                  {open[c._id] && repliesOf(c._id).map((r) => <Comment key={r._id} c={r} onReply={post.commentsOff ? null : () => reply(c, r)} onDelete={del} onLike={likeComment} />)}
                 </div>
               )}
             </div>
@@ -380,8 +448,9 @@ export const PostView = ({ post : initial, onDeleted }) => {
             </>
           )}
       </div>
-      {menu && <PostMenu actions={actions} goToPost={false} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} />}
+      {menu && <PostMenu actions={actions} goToPost={false} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} onHidden={onDeleted} />}
       {editing && <EditCaption actions={actions} onClose={() => setEditing(false)} />}
     </div>
+    </>
   )
 }

@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import moment from 'moment'
 import {
-  IoChevronBack, IoCallOutline, IoVideocamOutline, IoInformationCircleOutline, IoInformationCircle, IoHappyOutline, IoMicOutline,
+  IoChevronBack, IoExpandOutline, IoCallOutline, IoVideocamOutline, IoInformationCircleOutline, IoInformationCircle, IoHappyOutline, IoMicOutline,
   IoImageOutline, IoHeartOutline, IoArrowUndoOutline, IoEllipsisHorizontal, IoClose, IoAdd, IoPlay, IoPause, IoAlertCircle, IoCameraOutline,
 } from 'react-icons/io5'
 import Avatar from '../../Avatar'
@@ -348,7 +348,7 @@ const Composer = ({ onSendText, onSendFiles, onSendVoice, onTyping, reply, editi
 /* ---------- the conversation ---------- */
 
 // embedded: shown inside the floating Messages popup (threadId given, "back" returns to the popup's list)
-const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
+const DirectThread = ({ threadId : givenId, embedded = false, onBack, onEnlarge }) => {
   const params = useParams()
   const threadId = givenId || params.threadId
   const navigate = useNavigate()
@@ -520,6 +520,7 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
             </>
           )}
           <button onClick={() => setDetails((v) => !v)} title='Conversation information' aria-label='Conversation information'>{details ? <IoInformationCircle size={28} /> : <IoInformationCircleOutline size={28} />}</button>
+          {embedded && onEnlarge && <button onClick={onEnlarge} title='Open in Messages' aria-label='Open in Messages'><IoExpandOutline size={22} /></button>}
         </header>
 
         <div className='flex min-h-0 flex-1 flex-col-reverse overflow-y-auto'>
@@ -549,7 +550,7 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
           </div>
         </div>
 
-        {thread.status === 'request' && (
+        {thread.status === 'request' && !thread.blockedByMe && (
           <div className='shrink-0 border-t border-px-border px-4 py-4 text-center'>
             <p className='font-semibold'>Accept message request from {peer ? peer.username || peer.name : thread.title}?</p>
             <p className='mx-auto mt-1 max-w-md text-xs text-px-muted'>If you accept, they will also be able to call you and see info such as your activity status and when you've read messages.</p>
@@ -560,7 +561,7 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
             </div>
           </div>
         )}
-        {thread.status === 'inbox' && thread.blockedByMe && (
+        {thread.blockedByMe && (
           <div className='shrink-0 border-t border-px-border p-4 text-center text-sm'>
             <p className='text-px-muted'>You blocked this account.</p>
             <button onClick={() => block(false)} className='mt-1 font-semibold text-px-blue'>Unblock</button>

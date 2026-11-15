@@ -1,6 +1,7 @@
 const UserModel = require('../models/user.model')
 const { PostModel, CommentModel, NotificationModel, SocialReportModel, REACTIONS } = require('../models/social.model')
 const { CxGroupModel } = require('../models/cxGroup.model')
+const { CxPageModel } = require('../models/cxPage.model')
 const { isAllowedMediaUrl, isValidId, escapeRegex } = require('../helpers/chat')
 const S = require('../helpers/social')
 
@@ -33,6 +34,7 @@ const cleanMedia = (media) => {
     return media.map((m) => {
         if (!m || !['image', 'video'].includes(m.kind) || !m.url || !isAllowedMediaUrl(m.url)) throw new S.SocialError('Invalid photo or video')
         const out = { url : m.url, kind : m.kind }
+        if (typeof m.alt === 'string' && m.alt.trim()) out.alt = m.alt.trim().slice(0, 200)
         if (Number.isFinite(m.width) && Number.isFinite(m.height) && m.width > 0 && m.height > 0) { out.width = Math.round(m.width); out.height = Math.round(m.height) }
         return out
     })
@@ -68,17 +70,77 @@ const buildPost = (app, body, me) => {
     } else {
         if (!text && !media.length && !body.sharedPost) throw new S.SocialError("Write something or add a photo")
         if (text.length > 5000) throw new S.SocialError('Posts can have up to 5,000 characters')
-        doc.audience = ['public', 'friends', 'only_me'].includes(body.audience) ? body.audience : 'friends'
+        doc.audience = ['public', 'friends', 'only_me', 'specific', 'except'].includes(body.audience) ? body.audience : 'friends'
         if (body.background && !media.length && text.length <= 130 && S.POST_BACKGROUNDS.includes(body.background)) doc.background = body.background
+        if (body.poll) doc.poll = cleanPoll(body.poll, media)
     }
+    if (body.scheduledFor) doc.scheduledFor = cleanSchedule(body.scheduledFor)
     return doc
+}
+
+// Connectify poll: 2-6 different options (up to 80 characters), one or several choices
+const cleanPoll = (poll, media) => {
+    if (media.length) throw new S.SocialError("A poll can't have photos")
+    const options = (Array.isArray(poll.options) ? poll.options : []).map((o) => (typeof o === 'string' ? o.replace(/\s+/g, ' ').trim() : '')).filter(Boolean)
+    if (options.length < 2) throw new S.SocialError('Add at least 2 poll options')
+    if (options.length > 6) throw new S.SocialError('A poll can have up to 6 options')
+    if (options.some((o) => o.length > 80)) throw new S.SocialError('Poll options can have up to 80 characters')
+    if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw new S.SocialError('Poll options must be different')
+    return { options : options.map((text) => ({ text, votes : [] })), multiple : !!poll.multiple }
+}
+
+// "Schedule": at least 5 minutes and at most 75 days ahead (like Meta Business Suite)
+const cleanSchedule = (value) => {
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) throw new S.SocialError('Choose when to publish')
+    if (d.getTime() < Date.now() + 4 * 60 * 1000) throw new S.SocialError('Schedule at least 5 minutes from now')
+    if (d.getTime() > Date.now() + 75 * 24 * 3600 * 1000) throw new S.SocialError('You can schedule up to 75 days ahead')
+    return d
+}
+
+// "Specific friends" / "Friends except": only my friends, 1-500 of them
+const cleanAudienceList = async (doc, ids, me) => {
+    if (!['specific', 'except'].includes(doc.audience)) return
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500) throw new S.SocialError(doc.audience === 'specific' ? 'Choose the friends who can see this' : "Choose the friends who shouldn't see this")
+    const friends = new Set(await S.friendIds(me._id))
+    const list = [...new Set(ids.map(String))].filter((id) => friends.has(id))
+    if (!list.length) throw new S.SocialError('Choose from your friends')
+    doc.audienceList = list.map(S.oid)
+}
+
+// Pixify collab: invite up to 3 people (they accept from their notifications)
+const cleanCollaborators = async (ids, me) => {
+    if (ids === undefined || ids === null) return undefined
+    if (!Array.isArray(ids) || ids.length > 3) throw new S.SocialError('Invite up to 3 collaborators')
+    const unique = [...new Set(ids.map(String))].filter((id) => id !== String(me._id))
+    if (unique.some((id) => !isValidId(id))) throw new S.SocialError('Invalid people')
+    const users = await UserModel.find({ _id : { $in : unique }, deletedAt : { $exists : false } }).select('blocked').lean()
+    return users.filter((u) => !S.blockedEitherWay(me, u)).map((u) => ({ userId : u._id, status : 'pending' }))
+}
+
+// what a new post triggers (now, or when a scheduled post is published)
+const announcePost = async (post, me) => {
+    for (const id of post.tagged || []) await S.notify({ user : id, actor : me, app : post.app, type : 'tag', post : post._id })
+    for (const c of post.collaborators || []) await S.notify({ user : c.userId, actor : me, app : post.app, type : 'collab_invite', post : post._id })
+    await S.notifyMentions({ text : post.text, actor : me, app : post.app, post })
 }
 
 // POST /api/social/posts  { app, text, media[], audience?, background?, sharedPost?, crossPost?: ['connectify'|'pixify'] }
 const createPost = handle(async (req) => {
     const app = appOf(req.body.app)
     const me = req.user
+    // Connectify Page post: an admin posts as the Page (always public, no tags / feeling / group / cross-post / share)
+    let pageDoc = null
+    if (req.body.page) {
+        if (app !== 'connectify') throw new S.SocialError('Only Connectify posts can be posted as a Page')
+        pageDoc = isValidId(String(req.body.page)) ? await CxPageModel.findById(req.body.page).select('admins').lean() : null
+        if (!pageDoc) throw new S.SocialError('Page not found', 404)
+        if (!S.isPageAdmin(pageDoc, me._id)) throw new S.SocialError('Only Page admins can post as the Page', 403)
+        if (req.body.group || req.body.sharedPost) throw new S.SocialError("Page posts can't go in groups or share posts")
+        req.body = { ...req.body, audience : 'public', audienceList : undefined, tagged : undefined, feeling : '', crossPost : undefined, collaborators : undefined }
+    }
     const doc = buildPost(app, req.body, me)
+    if (pageDoc) doc.page = pageDoc._id
 
     // Connectify share of another post
     let shared = null
@@ -88,6 +150,10 @@ const createPost = handle(async (req) => {
         shared = (await S.loadVisiblePost(req.body.sharedPost, ctx)).post
         if (shared.app !== 'connectify') throw new S.SocialError('This post can\'t be shared')
         if (shared.audience !== 'public' && String(shared.author) !== String(me._id)) throw new S.SocialError('Only public posts can be shared')
+        if (shared.group) {
+            const g = await CxGroupModel.findById(shared.group).select('privacy').lean()
+            if (!g || g.privacy === 'private') throw new S.SocialError("Posts from private groups can't be shared")
+        }
         // sharing a share shares the original
         if (shared.sharedPost) shared = await PostModel.findById(shared.sharedPost).lean() || shared
         doc.sharedPost = shared._id
@@ -95,6 +161,11 @@ const createPost = handle(async (req) => {
 
     const tagged = await cleanTagged(req.body.tagged, me)
     if (tagged?.length) doc.tagged = tagged
+    if (app === 'connectify') await cleanAudienceList(doc, req.body.audienceList, me)
+    if (app === 'pixify') {
+        const collaborators = await cleanCollaborators(req.body.collaborators, me)
+        if (collaborators?.length) doc.collaborators = collaborators
+    }
 
     // Connectify: posting in a group (members only)
     let group = null
@@ -109,30 +180,41 @@ const createPost = handle(async (req) => {
     const post = await PostModel.create(doc)
     const created = [post]
     if (group) await CxGroupModel.updateOne({ _id : group._id }, { $set : { lastPostAt : new Date() } })
-    for (const id of tagged || []) await S.notify({ user : id, actor : me._id, app, type : 'tag', post : post._id })
+    if (pageDoc) await CxPageModel.updateOne({ _id : pageDoc._id }, { $set : { lastPostAt : new Date() } })
 
     // "Also share to Connectify / Pixify": the same photos and caption as a post in the other app
-    const cross = Array.isArray(req.body.crossPost) && !group ? req.body.crossPost.filter((a) => S.SOCIAL_APPS.includes(a) && a !== app) : []
+    const cross = Array.isArray(req.body.crossPost) && !group && !pageDoc ? req.body.crossPost.filter((a) => S.SOCIAL_APPS.includes(a) && a !== app) : []
     for (const other of cross) {
         if (other === 'pixify' && !doc.media.length) continue
-        created.push(await PostModel.create(buildPost(other, { text : doc.text, media : doc.media, audience : 'friends' }, me)))
+        const copy = buildPost(other, { text : doc.text, media : doc.media, audience : 'friends', location : doc.location }, me)
+        if (doc.tagged?.length) copy.tagged = doc.tagged
+        if (doc.scheduledFor) copy.scheduledFor = doc.scheduledFor
+        created.push(await PostModel.create(copy))
     }
 
     if (shared) {
         await PostModel.updateOne({ _id : shared._id }, { $inc : { shareCount : 1 } })
         await S.notify({ user : shared.author, actor : me._id, app, type : 'share', post : shared._id })
     }
-    for (const p of created) await S.notifyMentions({ text : p.text, actor : me._id, app : p.app, post : p.toObject() })
+    // a scheduled post tells people about it when it's published
+    if (!doc.scheduledFor) for (const p of created) await announcePost(p.toObject(), me._id)
 
     const ctx = await S.viewerContext(me, app)
+    ctx.includeScheduled = true
     const [out] = await S.serializePosts([post.toObject()], ctx)
     return { post : out, crossPosted : created.slice(1).map((p) => ({ app : p.app, _id : String(p._id) })) }
 })
 
+// my posts, plus posts of the Pages I admin (any admin can edit / delete a Page's posts)
+const mineFilter = async (id, me) => {
+    const pages = (await CxPageModel.find({ admins : me._id }).select('_id').lean()).map((p) => p._id)
+    return { _id : id, $or : [{ author : me._id }, ...(pages.length ? [{ page : { $in : pages } }] : [])] }
+}
+
 // PATCH /api/social/posts/:id  { text?, audience?, commentsOff? }
 const editPost = handle(async (req) => {
     if (!isValidId(String(req.params.id))) throw new S.SocialError('Post not found', 404)
-    const post = await PostModel.findOne({ _id : req.params.id, author : req.user._id })
+    const post = await PostModel.findOne(await mineFilter(req.params.id, req.user))
     if (!post) throw new S.SocialError('Post not found', 404)
     if (req.body.text !== undefined) {
         const text = typeof req.body.text === 'string' ? req.body.text.trim() : ''
@@ -142,27 +224,33 @@ const editPost = handle(async (req) => {
         if (text !== post.text) { post.text = text; post.editedAt = new Date() }
     }
     if (req.body.audience !== undefined && post.app === 'connectify') {
-        if (!['public', 'friends', 'only_me'].includes(req.body.audience)) throw new S.SocialError('Invalid audience')
-        post.audience = req.body.audience
+        if (!['public', 'friends', 'only_me', 'specific', 'except'].includes(req.body.audience)) throw new S.SocialError('Invalid audience')
+        if (post.group) throw new S.SocialError("Group posts can't change audience")
+        if (post.page) throw new S.SocialError('Page posts are always public')
+        const doc = { audience : req.body.audience }
+        await cleanAudienceList(doc, req.body.audienceList, req.user)
+        post.audience = doc.audience
+        post.audienceList = doc.audienceList
     }
     if (req.body.commentsOff !== undefined) post.commentsOff = !!req.body.commentsOff
     if (req.body.hideLikes !== undefined && post.app === 'pixify') post.hideLikes = !!req.body.hideLikes
     if (req.body.location !== undefined) post.location = cleanString(req.body.location, 100, 'Location')
-    if (req.body.feeling !== undefined && post.app === 'connectify') post.feeling = cleanString(req.body.feeling, 60, 'Feeling')
-    if (req.body.tagged !== undefined) {
+    if (req.body.feeling !== undefined && post.app === 'connectify' && !post.page) post.feeling = cleanString(req.body.feeling, 60, 'Feeling')
+    if (req.body.tagged !== undefined && !post.page) {
         const before = new Set((post.tagged || []).map(String))
         post.tagged = await cleanTagged(req.body.tagged, req.user)
         for (const id of post.tagged) if (!before.has(String(id))) await S.notify({ user : id, actor : req.user._id, app : post.app, type : 'tag', post : post._id })
     }
     await post.save()
     const ctx = await S.viewerContext(req.user, post.app)
+    ctx.includeScheduled = true
     const [out] = await S.serializePosts([post.toObject()], ctx)
     return { post : out }
 })
 
 const deletePost = handle(async (req) => {
     if (!isValidId(String(req.params.id))) throw new S.SocialError('Post not found', 404)
-    const post = await PostModel.findOneAndDelete({ _id : req.params.id, author : req.user._id }).lean()
+    const post = await PostModel.findOneAndDelete(await mineFilter(req.params.id, req.user)).lean()
     if (!post) throw new S.SocialError('Post not found', 404)
     await Promise.all([
         CommentModel.deleteMany({ post : post._id }),
@@ -197,14 +285,19 @@ const feed = handle(async (req) => {
         // Instagram's "Favorites" feed
         if (req.query.filter === 'favorites') ids = (v.pixify?.favorites || []).map(String).filter((id) => ctx.following.has(id))
         else ids.push(ctx.me)
-        filter.author = { $in : ids.map(S.oid) }
+        filter.$or = [{ author : { $in : ids.map(S.oid) } }, { collaborators : { $elemMatch : { userId : { $in : ids.map(S.oid) }, status : 'accepted' } } }]
+        const notInterested = v.pixify?.notInterested || []
+        if (notInterested.length) filter._id = { $nin : notInterested }
     } else {
         const now = Date.now()
         const off = new Set([...(v.connectify?.unfollowed || []).map(String), ...(v.connectify?.snoozed || []).filter((s) => new Date(s.until) > now).map((s) => String(s.userId))])
         ids = [...ids.filter((id) => !off.has(id)), ctx.me]
         const hidden = v.connectify?.hiddenPosts || []
         // friends' posts (outside groups) + posts in my groups
-        filter.$or = [{ author : { $in : ids.map(S.oid) }, group : { $exists : false } }, { group : { $in : [...ctx.groups].map(S.oid) } }]
+        // + posts of Pages I follow or manage
+        const pages = (await CxPageModel.find({ $or : [{ followers : v._id }, { admins : v._id }] }).select('_id').lean()).map((p) => p._id)
+        filter.$or = [{ author : { $in : ids.map(S.oid) }, group : { $exists : false }, page : { $exists : false } }, { group : { $in : [...ctx.groups].map(S.oid) } },
+            ...(pages.length ? [{ page : { $in : pages } }] : [])]
         if (hidden.length) filter._id = { $nin : hidden }
     }
     const raw = await PostModel.find(filter).sort({ createdAt : -1 }).limit(PAGE).lean()
@@ -293,9 +386,10 @@ const userPosts = handle(async (req) => {
         const raw = await PostModel.find({ app, tagged : author._id, archived : { $ne : true }, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
         return { posts : await S.serializePosts(raw, ctx), next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
     }
-    const base = { app, author : author._id, archived : { $ne : true }, group : { $exists : false } }
+    const base = { app, archived : { $ne : true }, group : { $exists : false }, page : { $exists : false }, scheduledFor : { $exists : false },
+        $or : [{ author : author._id }, ...(app === 'pixify' ? [{ collaborators : { $elemMatch : { userId : author._id, status : 'accepted' } } }] : [])] }
     // pinned posts come first (on the first page)
-    const pinned = req.query.before ? [] : await PostModel.find({ ...base, pinnedAt : { $exists : true } }).sort({ pinnedAt : -1 }).limit(3).lean()
+    const pinned = req.query.before ? [] : await PostModel.find({ ...base, author : author._id, pinnedAt : { $exists : true } }).sort({ pinnedAt : -1 }).limit(3).lean()
     const raw = await PostModel.find({ ...base, ...(pinned.length ? { _id : { $nin : pinned.map((p) => p._id) } } : {}), ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
     const posts = await S.serializePosts([...pinned, ...raw], ctx)
     return { posts, next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
@@ -325,12 +419,16 @@ const react = handle(async (req) => {
     if (post.app === 'pixify' && type && type !== 'like') throw new S.SocialError('Invalid reaction')
     const me = req.user._id
     await PostModel.updateOne({ _id : post._id }, { $pull : { reactions : { userId : me } } })
-    if (type) await PostModel.updateOne({ _id : post._id }, { $push : { reactions : { userId : me, type, at : new Date() } } })
+    // the condition makes a second simultaneous click a no-op instead of a duplicate reaction
+    if (type) await PostModel.updateOne({ _id : post._id, 'reactions.userId' : { $ne : me } }, { $push : { reactions : { userId : me, type, at : new Date() } } })
     const nType = post.app === 'pixify' ? 'like' : 'react'
     if (type) await S.notify({ user : post.author, actor : me, app : post.app, type : nType, post : post._id, reaction : type })
     else await S.unnotify({ user : post.author, actor : me, app : post.app, type : nType, post : post._id })
-    const fresh = await PostModel.findById(post._id).select('reactions').lean()
-    return S.reactionSummary(fresh, me)
+    const fresh = await PostModel.findById(post._id).select('reactions hideLikes author').lean()
+    const summary = S.reactionSummary(fresh, me)
+    // "Hide like count": others never get the number
+    if (fresh.hideLikes && String(fresh.author) !== String(me)) return { ...summary, hideLikes : true, reactionCount : summary.reactionCount ? 1 : 0, reactionCounts : {} }
+    return summary
 })
 
 // people who reacted (with their reaction), newest first
@@ -375,6 +473,7 @@ const pinPost = handle(async (req) => {
     if (req.body.pin === false) post.pinnedAt = undefined
     else {
         if (post.group) throw new S.SocialError("Group posts can't be pinned to your profile")
+        if (post.page) throw new S.SocialError("Page posts can't be pinned to your profile")
         if (post.archived) throw new S.SocialError('Unarchive the post first')
         const count = await PostModel.countDocuments({ app : post.app, author : req.user._id, pinnedAt : { $exists : true }, _id : { $ne : post._id } })
         if (count >= 3) throw new S.SocialError('You can pin up to 3 posts. Unpin one first.')
@@ -419,7 +518,7 @@ const hashtag = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, app)
     const [raw, count] = await Promise.all([
         PostModel.find({ ...filter, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE * 2).lean(),
-        req.query.before ? null : PostModel.countDocuments(filter)
+        req.query.before ? null : S.countVisible(filter, ctx)
     ])
     return { tag, ...(count !== null ? { count } : {}), posts : await S.serializePosts(raw, ctx), ...pageOf(raw, PAGE * 2) }
 })
@@ -427,6 +526,9 @@ const hashtag = handle(async (req) => {
 // POST /posts/:id/view -> a Reel was played (not counted for the author)
 const viewPost = handle(async (req) => {
     if (!isValidId(String(req.params.id))) throw new S.SocialError('Post not found', 404)
+    const raw = await PostModel.findById(req.params.id).select('app').lean()
+    if (!raw) throw new S.SocialError('Post not found', 404)
+    await S.loadVisiblePost(req.params.id, await S.viewerContext(req.user, raw.app))
     await PostModel.updateOne({ _id : req.params.id, isReel : true, author : { $ne : req.user._id } }, { $inc : { views : 1 } })
     return {}
 })
@@ -514,8 +616,12 @@ const listComments = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, raw.app)
     const { post } = await S.loadVisiblePost(req.params.id, ctx)
     const list = await CommentModel.find({ post : post._id }).sort({ createdAt : 1 }).limit(500).lean()
-    const users = await S.loadUsers(list.map((c) => c.author))
-    const comments = serializeComments(list, users, req.user, post)
+    const users = await S.loadUsers([...list.map((c) => c.author), post.author])
+    const words = (users[String(post.author)]?.pixify?.hiddenWords || []).map((w) => w.toLowerCase())
+    const flagged = (c) => words.length > 0 && words.some((w) => c.text.toLowerCase().includes(w))
+    const isAuthor = String(post.author) === ctx.me
+    const visible = list.filter((c) => !flagged(c) || String(c.author) === ctx.me || isAuthor)
+    const comments = serializeComments(visible, users, req.user, post).map((c) => (isAuthor && flagged(visible.find((x) => String(x._id) === c._id)) ? { ...c, hiddenByWords : true } : c))
     // the pinned comment goes first
     comments.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
     return { comments }
@@ -553,9 +659,12 @@ const deleteComment = handle(async (req) => {
     const post = await PostModel.findById(c.post).select('author').lean()
     if (String(c.author) !== String(req.user._id) && String(post?.author) !== String(req.user._id)) throw new S.SocialError("You can't delete this comment", 403)
     const ids = [c._id, ...(await CommentModel.find({ parent : c._id }).select('_id').lean()).map((r) => r._id)]
-    await CommentModel.deleteMany({ _id : { $in : ids } })
+    const gone = await CommentModel.deleteMany({ _id : { $in : ids } })
     await NotificationModel.deleteMany({ comment : { $in : ids } })
-    if (post) await PostModel.updateOne({ _id : post._id }, { $inc : { commentCount : -ids.length } })
+    if (post && gone.deletedCount) {
+        await PostModel.updateOne({ _id : post._id }, { $inc : { commentCount : -gone.deletedCount } })
+        await PostModel.updateOne({ _id : post._id, commentCount : { $lt : 0 } }, { $set : { commentCount : 0 } })
+    }
     return { removed : ids.map(String) }
 })
 
