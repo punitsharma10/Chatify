@@ -36,11 +36,12 @@ const audienceFor = (owner) => {
     return [...new Set(list)].filter((id) => !blocked.has(id))
 }
 
-// people who see a story in Pixify / Connectify. For now: all my contacts (not blocked).
-// Later rounds replace this with Pixify followers and Connectify friends.
-const shareAudienceFor = (owner) => {
+// people who see a story in Pixify (my followers) or Connectify (my friends), blocked people left out
+const appAudienceFor = async (owner, app) => {
+    const { followerIds, friendIds } = require('./social')
     const blocked = new Set((owner.blocked || []).map(String))
-    return [...new Set((owner.contacts || []).map((c) => String(c.userId)))].filter((id) => !blocked.has(id))
+    const ids = app === 'pixify' ? await followerIds(owner._id) : await friendIds(owner._id)
+    return [...new Set(ids)].filter((id) => !blocked.has(id))
 }
 
 // everyone who can see this status in any app
@@ -53,4 +54,4 @@ const canSeeStatus = (owner, status, viewerId) => {
     return viewersOf(status).includes(String(viewerId))
 }
 
-module.exports = { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, shareAudienceFor, viewersOf, canSeeStatus }
+module.exports = { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus }

@@ -45,6 +45,8 @@ mongoose.connect(process.env.MONGODB_URI, {})
   })
 
   // api endpoint
+  // Pixify + Connectify
+  app.use('/api/social', require('./routes/social'))
   app.use('/api', router)
 
 

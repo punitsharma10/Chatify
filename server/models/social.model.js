@@ -1,0 +1,102 @@
+const mongoose = require('mongoose')
+const ObjectId = mongoose.Schema.ObjectId
+
+// Pixify (Instagram-style) and Connectify (Facebook-style) data. Chats keeps its own models.
+
+const REACTIONS = ['like', 'love', 'care', 'haha', 'wow', 'sad', 'angry'] // Pixify only uses 'like' (the heart)
+
+const mediaSchema = new mongoose.Schema({
+    url : { type : String, required : true },
+    kind : { type : String, enum : ['image', 'video'], required : true },
+    width : Number,
+    height : Number
+}, { _id : false })
+
+// A post in one app. Pixify: photos / videos + caption (visibility follows the account: public, or followers if
+// private). Connectify: text and / or photos, with its own audience (public / friends / only me), can share a post.
+const postSchema = new mongoose.Schema({
+    app : { type : String, enum : ['pixify', 'connectify'], required : true },
+    author : { type : ObjectId, ref : 'User', required : true },
+    text : { type : String, default : '', maxlength : 5000 },
+    media : { type : [mediaSchema], default : [] },
+    // Connectify only; Pixify posts are 'public' and checked against the author's private-account setting
+    audience : { type : String, enum : ['public', 'friends', 'only_me'], default : 'public' },
+    // Connectify: a share of someone else's post
+    sharedPost : { type : ObjectId, ref : 'Post' },
+    // Connectify: coloured text post background
+    background : { type : String, default : '' },
+    // one reaction per person (Pixify: 'like')
+    reactions : { type : [{ userId : { type : ObjectId, ref : 'User' }, type : { type : String, enum : REACTIONS }, at : Date, _id : false }], default : [] },
+    commentCount : { type : Number, default : 0 },
+    shareCount : { type : Number, default : 0 },
+    // a video post in Pixify also shows in Reels
+    isReel : { type : Boolean, default : false },
+    // turn off comments (Pixify "Turn off commenting")
+    commentsOff : { type : Boolean, default : false },
+    editedAt : Date
+}, { timestamps : true })
+
+postSchema.index({ app : 1, author : 1, createdAt : -1 })
+postSchema.index({ app : 1, createdAt : -1 })
+postSchema.index({ app : 1, isReel : 1, createdAt : -1 })
+
+const commentSchema = new mongoose.Schema({
+    post : { type : ObjectId, ref : 'Post', required : true },
+    author : { type : ObjectId, ref : 'User', required : true },
+    text : { type : String, required : true, maxlength : 2200 },
+    // a reply to another comment (one level, like both apps show it)
+    parent : { type : ObjectId, ref : 'Comment' },
+    likes : { type : [{ type : ObjectId, ref : 'User' }], default : [] }
+}, { timestamps : true })
+
+commentSchema.index({ post : 1, createdAt : 1 })
+
+// Pixify: one-way follow. 'pending' = a request to a private account.
+const followSchema = new mongoose.Schema({
+    follower : { type : ObjectId, ref : 'User', required : true },
+    following : { type : ObjectId, ref : 'User', required : true },
+    status : { type : String, enum : ['active', 'pending'], default : 'active' }
+}, { timestamps : true })
+
+followSchema.index({ follower : 1, following : 1 }, { unique : true })
+followSchema.index({ following : 1, status : 1, createdAt : -1 })
+
+// Connectify: friendship (request -> accepted). One document per pair.
+const friendshipSchema = new mongoose.Schema({
+    from : { type : ObjectId, ref : 'User', required : true },
+    to : { type : ObjectId, ref : 'User', required : true },
+    status : { type : String, enum : ['pending', 'accepted'], default : 'pending' },
+    acceptedAt : Date
+}, { timestamps : true })
+
+friendshipSchema.index({ from : 1, to : 1 }, { unique : true })
+friendshipSchema.index({ to : 1, status : 1 })
+friendshipSchema.index({ from : 1, status : 1 })
+
+// What happened to you in Pixify / Connectify (likes, comments, follows, friend requests, ...)
+const NOTIFICATION_TYPES = ['like', 'react', 'comment', 'reply', 'comment_like', 'mention', 'follow', 'follow_request', 'follow_accept', 'friend_request', 'friend_accept', 'share']
+const notificationSchema = new mongoose.Schema({
+    user : { type : ObjectId, ref : 'User', required : true },   // who it's for
+    actor : { type : ObjectId, ref : 'User', required : true },  // who did it
+    app : { type : String, enum : ['pixify', 'connectify'], required : true },
+    type : { type : String, enum : NOTIFICATION_TYPES, required : true },
+    post : { type : ObjectId, ref : 'Post' },
+    comment : { type : ObjectId, ref : 'Comment' },
+    reaction : { type : String },
+    text : { type : String, default : '', maxlength : 200 }, // comment preview
+    read : { type : Boolean, default : false }
+}, { timestamps : true })
+
+notificationSchema.index({ user : 1, app : 1, createdAt : -1 })
+// old notifications are cleaned up after 90 days
+notificationSchema.index({ createdAt : 1 }, { expireAfterSeconds : 90 * 24 * 3600 })
+
+module.exports = {
+    REACTIONS,
+    NOTIFICATION_TYPES,
+    PostModel : mongoose.model('Post', postSchema),
+    CommentModel : mongoose.model('Comment', commentSchema),
+    FollowModel : mongoose.model('Follow', followSchema),
+    FriendshipModel : mongoose.model('Friendship', friendshipSchema),
+    NotificationModel : mongoose.model('Notification', notificationSchema)
+}

@@ -4,6 +4,8 @@ const initialState = {
   _id : "",
   name : "",
   username : "", // one @username for Chats, Pixify and Connectify
+  pixify : {},     // { private, bio, website }
+  connectify : {}, // { bio, cover_pic, city, work }
   email : "",
   phone : "",
   profile_pic : "",
@@ -26,6 +28,8 @@ export const userSlice = createSlice({
         state._id = action.payload._id
         state.name = action.payload.name
         state.username = action.payload.username || ""
+        if (action.payload.pixify) state.pixify = action.payload.pixify
+        if (action.payload.connectify) state.connectify = action.payload.connectify
         state.email = action.payload.email || ""
         state.phone = action.payload.phone || ""
         state.profile_pic = action.payload.profile_pic
@@ -51,6 +55,8 @@ export const userSlice = createSlice({
         state._id = ""
         state.name = ""
         state.username = ""
+        state.pixify = {}
+        state.connectify = {}
         state.email = ""
         state.phone = ""
         state.profile_pic = ""

@@ -11,6 +11,8 @@ import { renderFormatted, plainPreview } from '../helpers/formatText'
 import { thumbUrl, videoPoster, formatBytes, fileExtension, downloadMedia } from '../helpers/media'
 import { VoicePlayer, formatClock } from './Voice'
 import { PollCard, ContactCard, LocationCard, LinkPreviewCard, ViewOnceBubble, StatusReplyQuote } from './MessageExtras'
+import { SharedPostCard } from './social/common'
+import { POST_LINK } from '../helpers/social'
 
 // delivery state of my own message
 export const statusOf = (msg) => {
@@ -82,6 +84,8 @@ const MessageBubble = ({
   const hasVideo = !!(msg.videoUrl || (msg.localPreview && msg.kind === 'video'))
   const hasFile = !!(msg.fileUrl || (msg.kind === 'file' && msg.fileName))
   const hasMedia = !deleted && (hasImage || hasVideo)
+  // a Pixify / Connectify post link sent from "Send to chat" shows as a post card
+  const sharedPost = !deleted && typeof msg.text === 'string' ? msg.text.trim().match(POST_LINK) : null
   const isSticker = !deleted && !!msg.stickerUrl
   const isVoice = !deleted && !!(msg.audioUrl || msg.kind === 'voice')
   const card = !deleted && !!(msg.poll || msg.contact || msg.location || msg.viewOnce)
@@ -272,7 +276,8 @@ const MessageBubble = ({
               )}
 
               {!isSticker && !isVoice && <div className={`relative ${hasMedia ? (msg.text ? 'px-1.5 pb-1 pt-1' : '') : ''}`}>
-                {msg.linkPreview && msg.text && !hasMedia && <LinkPreviewCard preview={msg.linkPreview} mine={mine} />}
+                {sharedPost && !hasMedia && <SharedPostCard app={sharedPost[1].toLowerCase()} postId={sharedPost[2]} mine={mine} />}
+                {msg.linkPreview && msg.text && !hasMedia && !sharedPost && <LinkPreviewCard preview={msg.linkPreview} mine={mine} />}
                 {msg.text && (
                   <span className='chat-text whitespace-pre-wrap break-words text-wa-text'>
                     {renderFormatted(msg.text, searchTerm, msg.mentions?.length && mentionNames ? mentionNames(msg.mentions) : null)}

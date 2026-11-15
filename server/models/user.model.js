@@ -92,6 +92,21 @@ const userSchema = new mongoose.Schema({
         default : undefined
     },
     contacts : [contactSchema],
+    // Pixify profile: private account = only approved followers see posts and stories
+    pixify : {
+        private : { type : Boolean, default : false },
+        bio : { type : String, default : '', maxlength : 150 },
+        website : { type : String, default : '', maxlength : 200 }
+    },
+    // Connectify profile
+    connectify : {
+        bio : { type : String, default : '', maxlength : 101 },
+        cover_pic : { type : String, default : '' },
+        city : { type : String, default : '', maxlength : 60 },
+        work : { type : String, default : '', maxlength : 80 }
+    },
+    // Pixify posts I bookmarked (newest last)
+    savedPosts : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined },
     // existing accounts get the people they already chat with as contacts once (see helpers/migrate.js)
     contactsMigrated : { type : Boolean, default : true },
     // users this user has blocked

@@ -3,7 +3,7 @@ const UserModel = require('../models/user.model')
 const StatusModel = require('../models/status.model')
 const { isValidId, isAllowedMediaUrl, publicUser, hasBlocked } = require('../helpers/chat')
 const { cleanEnvelope, viewEnvelope, keysOnlyFor, publicDevice } = require('../helpers/e2ee')
-const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, shareAudienceFor, viewersOf, canSeeStatus } = require('../helpers/status')
+const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus } = require('../helpers/status')
 
 class UserError extends Error {}
 
@@ -73,8 +73,12 @@ module.exports = function registerStatusHandlers(io, socket) {
             kind,
             expiresAt : new Date(Date.now() + STATUS_TTL_MS),
             apps,
-            audience : apps.includes('chats') ? audienceFor(owner) : [],
-            ...(shared ? { shareAudience : shareAudienceFor(owner) } : {})
+            audience : apps.includes('chats') ? audienceFor(owner) : []
+        }
+        if (shared) {
+            doc.appAudience = {}
+            for (const app of SHARED_APPS.filter((a) => apps.includes(a))) doc.appAudience[app] = await appAudienceFor(owner, app)
+            doc.shareAudience = [...new Set(Object.values(doc.appAudience).flat().map(String))]
         }
         if (e2ee) {
             // encrypted on the device for the audience (people the status is shared with) + my own devices
@@ -109,7 +113,7 @@ module.exports = function registerStatusHandlers(io, socket) {
         const meUser = await loadUser(me)
         // older updates have no `apps` list and belong to Chats
         const inApp = app === 'chats' ? { $or : [{ apps : 'chats' }, { apps : { $exists : false } }] } : { apps : app }
-        const sharedWithMe = app === 'chats' ? { audience : meId } : { shareAudience : meId }
+        const sharedWithMe = app === 'chats' ? { audience : meId } : { [`appAudience.${app}`] : meId }
         const [mine, others] = await Promise.all([
             StatusModel.find({ userId : meId, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).lean(),
             StatusModel.find({ ...sharedWithMe, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).limit(1000).lean()

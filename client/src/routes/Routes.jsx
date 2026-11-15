@@ -8,7 +8,11 @@ import Message from "../components/Message";
 import AuthLayout from "../layout/AuthLayout";
 import ForgotPassword from "../pages/ForgetPassword";
 import JoinGroup from "../components/JoinGroup";
-import Pixify from "../pages/Pixify";
+import PixifyLayout from "../components/pixify/PixifyLayout";
+import PixifyHome from "../components/pixify/PixifyHome";
+import PixifyProfile, { PixifyEditProfile } from "../components/pixify/PixifyProfile";
+import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage } from "../components/pixify/PixifyDiscover";
+import PixifyNotifications from "../components/pixify/PixifyNotifications";
 import Connectify from "../pages/Connectify";
 
 const router = createBrowserRouter([
@@ -39,7 +43,17 @@ const router = createBrowserRouter([
                 // the other two apps share the same login and connection (see pages/Home.jsx)
                 {
                     path : 'pixify',
-                    element : <Pixify/>
+                    element : <PixifyLayout/>,
+                    children : [
+                        { index : true, element : <PixifyHome/> },
+                        { path : 'explore', element : <PixifyExplore/> },
+                        { path : 'reels', element : <PixifyReels/> },
+                        { path : 'search', element : <PixifySearch/> },
+                        { path : 'notifications', element : <PixifyNotifications/> },
+                        { path : 'edit', element : <PixifyEditProfile/> },
+                        { path : 'p/:postId', element : <PixifyPostPage/> },
+                        { path : 'u/:handle', element : <PixifyProfile/> },
+                    ]
                 },
                 {
                     path : 'connectify',

@@ -24,6 +24,12 @@ const ids = (list, ownerId) => (list.updates.find((u) => u.user._id === ownerId)
 ;(async () => {
   const A = await makeUser('Ann'), B = await makeUser('Ben'), C = await makeUser('Cat'), D = await makeUser('Dan')
   await befriend(A, B, C) // D is a stranger
+  // Pixify stories go to followers, Connectify stories to friends: Ben follows Ann; Ann is friends with Ben and Cat
+  await post('/api/social/follow/' + A.id, { follow: true }, B.token)
+  for (const X of [B, C]) {
+    await post('/api/social/friends/' + X.id, { action: 'request' }, A.token)
+    await post('/api/social/friends/' + A.id, { action: 'accept' }, X.token)
+  }
   const a = await connect(A.token), b = await connect(B.token), c = await connect(C.token), d = await connect(D.token)
   await sleep(300)
 
@@ -55,6 +61,8 @@ const ids = (list, ownerId) => (list.updates.find((u) => u.user._id === ownerId)
   check('my stories are listed per app', mineCx.mine.length === 1 && mineCx.mine[0]._id === all.status._id)
   check('unknown app rejected', !(await call(a, 'status-list', { app: 'facebook' })).ok)
 
+  check("a contact who doesn't follow you doesn't see Pixify stories", !ids(await call(c, 'status-list', { app: 'pixify' }), A.id).length)
+  check('friends see Connectify stories', ids(await call(c, 'status-list', { app: 'connectify' }), A.id).includes(all.status._id))
   check("stranger doesn't see Pixify stories", !ids(await call(d, 'status-list', { app: 'pixify' }), A.id).length)
   check("stranger can't view a Pixify story by id", !(await call(d, 'status-view', { statusId: pxOnly.status._id })).ok)
 
@@ -73,7 +81,7 @@ const ids = (list, ownerId) => (list.updates.find((u) => u.user._id === ownerId)
   await post('/api/updateuser', { privacy: { status: 'only', statusOnly: [C.id] } }, A.token)
   const both = await call(a, 'status-post', { kind: 'text', text: 'Privacy test', apps: ['chats', 'pixify'] })
   check('"Only share with" applies to Chats', !ids(await call(b, 'status-list'), A.id).includes(both.status._id))
-  check('…but Pixify shows it to contacts', ids(await call(b, 'status-list', { app: 'pixify' }), A.id).includes(both.status._id))
+  check('…but Pixify shows it to followers', ids(await call(b, 'status-list', { app: 'pixify' }), A.id).includes(both.status._id))
   await post('/api/updateuser', { privacy: { status: 'contacts' } }, A.token)
 
   // stories shared outside Chats can't be end-to-end encrypted
