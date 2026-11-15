@@ -10,6 +10,7 @@ const registerCallHandlers = require('./callHandlers')
 const registerStatusHandlers = require('./statusHandlers')
 const registerPlannerHandlers = require('./plannerHandlers')
 const registerE2eeHandlers = require('./e2eeHandlers')
+const registerDmHandlers = require('./dmHandlers')
 
 const app = express()
 
@@ -68,6 +69,7 @@ io.on('connection',(socket)=>{
     registerStatusHandlers(io, socket)
     registerPlannerHandlers(io, socket)
     registerE2eeHandlers(io, socket)
+    registerDmHandlers(io, socket)
 
     //disconnect
     socket.on('disconnect',async()=>{

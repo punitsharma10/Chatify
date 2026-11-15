@@ -72,6 +72,7 @@ const publicUser = (user, viewer) => {
         return {
             _id : u._id,
             name : u.name,
+            username : u.username || '',
             email : u.email,
             phone : u.phone,
             profile_pic : u.profile_pic,
@@ -92,6 +93,7 @@ const publicUser = (user, viewer) => {
         // the name the viewer saved them under, else their own profile name
         name : saved?.name || u.name,
         profileName : u.name,
+        username : u.deletedAt ? '' : u.username || '',
         isContact : !!saved,
         email : u.email,
         phone : u.phone,

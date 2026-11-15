@@ -62,6 +62,9 @@ export const messagePreview = (m) => {
   if (m.contact) return `👤 ${m.contact.name}`
   if (m.location) return `📍 ${m.location.name || 'Location'}`
   if (m.viewOnce) return m.viewOnce === 'video' ? '🎥 Video (view once)' : '📷 Photo (view once)'
+  // a Pixify / Connectify post sent with "Send to chat"
+  const shared = typeof m.text === 'string' && m.text.trim().match(/^https?:\/\/[^/\s]+\/(pixify|connectify)\/p\/[a-f0-9]{24}\/?$/i)
+  if (shared) return shared[1].toLowerCase() === 'pixify' ? '🖼️ Pixify post' : '📰 Connectify post'
   if (m.text) return plainPreview(m.text)
   if (m.imageUrl) return '📷 Photo'
   if (m.videoUrl) return '🎥 Video'

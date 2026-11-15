@@ -23,7 +23,7 @@ import { notificationPermission, requestNotifications, playNotificationSound } f
 import { IoNotificationsOffSharp } from "react-icons/io5";
 import { formatListTime } from '../helpers/formatTime';
 import { socketCall } from '../helpers/socketCall';
-import { plainPreview, renderFormatted } from '../helpers/formatText';
+import { plainPreview, renderFormatted, messagePreview } from '../helpers/formatText';
 import { MdChat, MdAddComment, MdOutlineChat, MdOutlineArchive, MdOutlineUnarchive, MdOutlineMarkChatUnread, MdOutlineMarkChatRead, MdOutlineCleaningServices } from "react-icons/md";
 import { HiDotsVertical } from "react-icons/hi";
 import { IoSearchOutline, IoClose, IoCamera, IoVideocam, IoChevronDown, IoNotificationsOffOutline, IoNotificationsOutline, IoTrashOutline, IoStarOutline, IoSettingsOutline, IoDocumentOutline, IoBan } from "react-icons/io5";
@@ -36,6 +36,7 @@ import { MdOutlinePoll } from 'react-icons/md'
 import { IoLocationOutline } from 'react-icons/io5'
 import StatusPanel from './StatusPanel'
 import CallsPanel from './CallsPanel'
+import AppSwitcher from './apps/AppSwitcher'
 import { MuteDialog } from './ChatDialogs'
 import ShortcutsDialog from './ShortcutsDialog'
 import Planner from './Planner'
@@ -271,7 +272,7 @@ const SideBar = () => {
         {last.stickerUrl && <span className='flex shrink-0 items-center gap-1'><IoHappyOutline size={16} /> Sticker</span>}
         {last.audioUrl && <span className='flex shrink-0 items-center gap-1'><IoMic size={15} className={sentByMe ? '' : 'text-wa-green'} /> {voiceLength(last.audioDuration)}</span>}
         {last.fileUrl && <span className='flex min-w-0 items-center gap-1'><IoDocumentOutline size={15} className='shrink-0' />{!last.text && <span className='truncate'>{last.fileName}</span>}</span>}
-        {last.text && <span className='truncate'>{plainPreview(last.text)}</span>}
+        {last.text && <span className='truncate'>{messagePreview({ text : last.text })}</span>}
       </>
     )
   }
@@ -301,6 +302,9 @@ const SideBar = () => {
           <RailButton id='status' title='Status' icon={<TbCircleDashed size={23} />} dot={statusUnseen} />
           <span className='my-1 h-px w-8 bg-wa-border' />
           <RailButton id='planner' title='Planner' icon={<IoAlarmOutline size={22} />} onClick={() => { setPlannerTab('reminders'); setDrawer('planner') }} />
+          <span className='my-1 h-px w-8 bg-wa-border' />
+          {/* the other Chatify apps: same account, no second login */}
+          <AppSwitcher only={['pixify', 'connectify']} />
         </div>
         <div className='flex flex-col items-center gap-2'>
           <RailButton id='starred' title='Starred messages' icon={<IoStarOutline size={21} />} />

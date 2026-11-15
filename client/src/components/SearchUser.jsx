@@ -8,7 +8,7 @@ import { notify, notifyError } from '../helpers/toast'
 import { socketCall } from '../helpers/socketCall'
 import axios from 'axios';
 
-// "New chat": your contacts, plus anyone you look up by their full phone number or email
+// "New chat": your contacts, plus anyone you look up by their full phone number, email or @username
 const SearchUser = ({ onClose, onNewGroup }) => {
   const socket = useSelector((s) => s.user.socketConnection)
   const contactList = useSelector((s) => s.user.contacts)
@@ -62,7 +62,7 @@ const SearchUser = ({ onClose, onNewGroup }) => {
           <IoSearchOutline size={17} className='shrink-0 text-wa-icon' />
           <input
             type='text'
-            placeholder='Search contacts, or type a full number / email'
+            placeholder='Search contacts, or a full number, email or @username'
             className='w-full bg-transparent text-base text-wa-text outline-none placeholder:text-wa-subtle sm:text-sm'
             onChange={(e) => setSearch(e.target.value)}
             value={search}
@@ -105,14 +105,14 @@ const SearchUser = ({ onClose, onNewGroup }) => {
           <div className='px-8 py-8 text-center'>
             <p className='text-sm text-wa-text'>{q ? 'No contact or account found' : 'No contacts yet'}</p>
             <p className='mt-2 text-sm leading-5 text-wa-muted'>
-              To find someone new, type their <b className='font-medium text-wa-text'>full phone number</b> (e.g. +91 98765 43210) or their <b className='font-medium text-wa-text'>full email</b>.
-              Chatify never shows a list of everyone, so only people who already know your number or email can find you.
+              To find someone new, type their <b className='font-medium text-wa-text'>full phone number</b> (e.g. +91 98765 43210), their <b className='font-medium text-wa-text'>full email</b>, or their exact <b className='font-medium text-wa-text'>@username</b>.
+              Chatify never shows a list of everyone, so only people who already know your number, email or username can find you.
             </p>
           </div>
         )}
 
         {!loading && results.length > 0 && !q && (
-          <p className='px-8 py-6 text-center text-xs leading-5 text-wa-muted'>Looking for someone else? Type their full phone number or email above.</p>
+          <p className='px-8 py-6 text-center text-xs leading-5 text-wa-muted'>Looking for someone else? Type their full phone number, email or @username above.</p>
         )}
       </div>
     </div>

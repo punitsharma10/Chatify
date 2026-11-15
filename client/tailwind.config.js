@@ -36,6 +36,9 @@ module.exports = {
           chip: v("chip"),
           link: v("link"),
         },
+        // Pixify (Instagram-style) and Connectify (Facebook-style), see src/index.css
+        px: Object.fromEntries(["bg", "text", "muted", "border", "hover", "raised", "blue"].map((k) => [k, `rgb(var(--px-${k}) / <alpha-value>)`])),
+        cx: Object.fromEntries(["bg", "card", "text", "muted", "border", "hover", "input", "blue"].map((k) => [k, `rgb(var(--cx-${k}) / <alpha-value>)`])),
       },
       fontFamily: {
         // "Twemoji Country Flags" only covers flag characters; it's loaded on systems that can't draw flags (Windows)
