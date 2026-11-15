@@ -9,15 +9,27 @@ const mediaSchema = new mongoose.Schema({
     url : { type : String, required : true },
     kind : { type : String, enum : ['image', 'video'], required : true },
     width : Number,
-    height : Number
+    height : Number,
+    // YouTube Short: video id (plays in YouTube's player) and its preview image
+    youtube : String,
+    poster : String
 }, { _id : false })
 
 // A post in one app. Pixify: photos / videos + caption (visibility follows the account: public, or followers if
 // private). Connectify: text and / or photos, with its own audience (public / friends / only me), can share a post.
 const postSchema = new mongoose.Schema({
     app : { type : String, enum : ['pixify', 'connectify'], required : true },
-    author : { type : ObjectId, ref : 'User', required : true },
+    // every post has an author, except a YouTube Short shown in Reels (see `external`)
+    author : { type : ObjectId, ref : 'User', required : function () { return !this.external?.key } },
     text : { type : String, default : '', maxlength : 5000 },
+    // a YouTube Short in Pixify Reels / Explore: stored so people can like, comment, save and share it here
+    external : {
+        source : String,   // 'YouTube'
+        key : String,      // 'yt-<videoId>'
+        by : String,       // channel name
+        byUrl : String,
+        link : String      // the Short on YouTube
+    },
     media : { type : [mediaSchema], default : [] },
     // Connectify only; Pixify posts are 'public' and checked against the author's private-account setting
     audience : { type : String, enum : ['public', 'friends', 'only_me'], default : 'public' },
@@ -55,6 +67,7 @@ const postSchema = new mongoose.Schema({
 }, { timestamps : true })
 
 postSchema.index({ app : 1, author : 1, createdAt : -1 })
+postSchema.index({ 'external.key' : 1 }, { unique : true, partialFilterExpression : { 'external.key' : { $type : 'string' } } })
 postSchema.index({ app : 1, createdAt : -1 })
 postSchema.index({ app : 1, isReel : 1, createdAt : -1 })
 postSchema.index({ tagged : 1, createdAt : -1 }, { partialFilterExpression : { 'tagged.0' : { $exists : true } } })

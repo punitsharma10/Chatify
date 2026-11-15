@@ -371,7 +371,7 @@ const search = handle(async (req) => {
 // hashtags used in recent posts that start with `q`, most used first
 const hashtagsLike = async (app, q) => {
     if (!/^[\p{L}\p{N}_]{1,60}$/u.test(q)) return []
-    const posts = await PostModel.find({ app, archived : { $ne : true }, text : { $regex : `#${escapeRegex(q)}`, $options : 'i' } }).sort({ createdAt : -1 }).limit(300).select('text').lean()
+    const posts = await PostModel.find({ app, archived : { $ne : true }, 'external.key' : { $exists : false }, text : { $regex : `#${escapeRegex(q)}`, $options : 'i' } }).sort({ createdAt : -1 }).limit(300).select('text').lean()
     const counts = {}
     const prefix = q.toLowerCase()
     for (const p of posts) {

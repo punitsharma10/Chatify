@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { IoSearchOutline, IoCloseCircle, IoHeart, IoHeartOutline, IoChatbubbleOutline, IoPaperPlaneOutline, IoFilmOutline, IoCopy, IoArrowBack, IoLockClosed, IoClose, IoPlay, IoArchiveOutline } from 'react-icons/io5'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { IoSearchOutline, IoCloseCircle, IoHeart, IoChatbubbleOutline, IoFilmOutline, IoCopy, IoArrowBack, IoLockClosed, IoClose, IoPlay, IoArchiveOutline } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, enc, compact, usePaged, useOnVisible } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { recentSearches, addRecentSearch, removeRecentSearch } from '../social/extras'
-import { MediaThumb, AutoVideo, RichText } from '../social/common'
-import YouTubeVideo from '../social/YouTubeVideo'
+import { MediaThumb } from '../social/common'
 import { usePixify } from './PixifyLayout'
-import { PostView, usePostActions, handleOf } from './Post'
+import { PostView } from './Post'
 import { FollowButton } from './PixifyHome'
 import { PostGrid } from './PixifyProfile'
 
@@ -76,78 +75,9 @@ export const PixifyExplore = () => {
   )
 }
 
-/* ---------------- Reels ---------------- */
+/* ---------------- Reels (see Reels.jsx) ---------------- */
 
-const Reel = ({ post : initial }) => {
-  const navigate = useNavigate()
-  const { sendToChat } = usePixify()
-  const actions = usePostActions(initial)
-  const { post, like } = actions
-  const box = useRef(null)
-  // one play counted when the reel is mostly on screen
-  useEffect(() => {
-    const el = box.current
-    if (!el || post.mine || post.external) return
-    let counted = false
-    const io = new IntersectionObserver(([e]) => {
-      if (!counted && e.intersectionRatio > 0.7) { counted = true; api.post(`/posts/${post._id}/view`).catch(() => {}) }
-    }, { threshold : [0.7] })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [post._id, post.mine, post.external])
-  return (
-    <section ref={box} className='relative flex h-full snap-start snap-always items-center justify-center py-0 md:py-4'>
-      <div className='relative h-full w-full overflow-hidden bg-black md:aspect-[9/16] md:h-full md:w-auto md:rounded-lg'>
-        {post.media[0].youtube
-          ? <YouTubeVideo id={post.media[0].youtube} poster={post.media[0].poster} className='h-full w-full' />
-          : <AutoVideo src={post.media[0].url} poster={post.media[0].poster} tapForSound className='h-full w-full' fit='object-contain' />}
-        <div className='pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pr-16 text-white'>
-          <div className='pointer-events-auto flex items-center gap-2'>
-            {post.external
-              ? <span className='flex items-center gap-2 text-sm font-semibold'><Avatar width={32} height={32} name={post.author.name} /><ShortCredit post={post} /></span>
-              : <Link to={`/pixify/u/${post.author.username || post.author._id}`} className='flex items-center gap-2 text-sm font-semibold'>
-                  <Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} />{handleOf(post.author)}
-                </Link>}
-          </div>
-          {post.text && <p className='pointer-events-auto mt-2 text-sm'><RichText text={post.text} app='pixify' limit={80} /></p>}
-          {post.views > 0 && <p className='mt-1 flex items-center gap-1 text-xs opacity-80'><IoPlay size={11} />{compact(post.views)} plays</p>}
-        </div>
-        {/* actions on the right (inside on phones) */}
-        {!post.external && <div className='absolute bottom-4 right-2 flex flex-col items-center gap-5 text-white md:text-white'>
-          <button onClick={() => like()} className='flex flex-col items-center text-xs' title='Like'>
-            {post.myReaction ? <IoHeart size={28} className='text-[#ff3040]' /> : <IoHeartOutline size={28} />}{compact(post.reactionCount)}
-          </button>
-          {!post.commentsOff && <button onClick={() => navigate(`/pixify/p/${post._id}`)} className='flex flex-col items-center text-xs' title='Comments'><IoChatbubbleOutline size={27} className='-scale-x-100' />{compact(post.commentCount)}</button>}
-          <button onClick={() => sendToChat(post)} title='Share'><IoPaperPlaneOutline size={26} /></button>
-        </div>}
-      </div>
-    </section>
-  )
-}
-
-export const PixifyReels = () => {
-  const { version } = usePixify()
-  const { state } = useLocation()
-  const paged = usePaged(`/explore?reels=1&v=${version}`)
-  // a reel tapped in Explore plays first, then the endless list
-  const start = state?.start
-  const items = start ? [start, ...paged.items.filter((p) => p._id !== start._id)] : paged.items
-  const more = useOnVisible(paged.loadMore, !paged.done && !paged.loading)
-  return (
-    <div className='h-full snap-y snap-mandatory overflow-y-auto bg-black md:bg-px-bg'>
-      {items.map((p) => <div key={p._id} className='h-full'><Reel post={p} /></div>)}
-      {paged.loading && <div className='flex h-full items-center justify-center'><span className='h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white' /></div>}
-      {!paged.loading && !paged.items.length && (
-        <div className='flex h-full flex-col items-center justify-center px-6 text-center text-white md:text-px-text'>
-          <IoFilmOutline size={56} />
-          <p className='mt-3 text-lg font-semibold'>No reels yet</p>
-          <p className='mt-1 text-sm opacity-70'>Share a post with one video and it shows up here.</p>
-        </div>
-      )}
-      <div ref={more} className='h-1' />
-    </div>
-  )
-}
+export { PixifyReels } from './Reels'
 
 /* ---------------- Search ---------------- */
 
@@ -234,6 +164,7 @@ export const PixifyPostPage = () => {
     api.get(`/posts/${postId}`).then((r) => {
       // a Connectify link opened in Pixify goes to Connectify
       if (r.post.app !== 'pixify') return navigate(`/connectify/p/${postId}`, { replace : true })
+      if (r.post.media?.[0]?.youtube) return navigate('/pixify/reels', { replace : true, state : { start : r.post } })
       setPost(r.post)
     }).catch((e) => { setPost(null); setError(e.message) })
   }, [postId, navigate])

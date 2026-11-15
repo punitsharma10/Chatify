@@ -78,11 +78,24 @@ const fake = http.createServer((rq, rs) => {
   check('only short, embeddable videos are asked for', seen.includes('test-key:short:true:video'))
   check('channel credited, link to the Short, title decoded, preview image', s1[0].external.by === 'Cool Channel' && s1[0].external.link.startsWith('https://www.youtube.com/shorts/') && s1[0].text === 'Fun & games #shorts' && s1[0].media[0].poster)
   const y7 = (await req('GET', '/explore?reels=1&before=x:7', C.token)).body.posts // positions 48..55
-  check('Shorts pages continue across searches', y7.length === 8 && y7[0]._id === 'yt-nature-0-48' && y7[2]._id === 'yt-travel-0-0')
+  check('Shorts pages continue across searches', y7.length === 8 && y7[0].media[0].youtube === 'nature-0-48' && y7[2].media[0].youtube === 'travel-0-0')
   const deep = (await req('GET', `/explore?reels=1&before=x:${1 + (20 * 50) / 8}`, C.token)).body.posts
-  check('later rounds use YouTube page tokens', deep.length === 8 && deep[0]._id.startsWith('yt-nature-1-'))
+  check('later rounds use YouTube page tokens', deep.length === 8 && deep[0].media[0].youtube.startsWith('nature-1-'))
   const two = [...(await req('GET', '/explore?reels=1&before=x:2', C.token)).body.posts, ...(await req('GET', '/explore?reels=1&before=x:3', C.token)).body.posts]
   check('no repeats between Shorts pages', new Set([...s1, ...two].map((p) => p._id)).size === 24)
+
+  // Shorts work like any reel: like, comment, save, share; each is stored once
+  const short = s1[0]
+  check('a Short has a real post id', /^[a-f0-9]{24}$/.test(short._id) && short.author.external && short.author.name === 'Cool Channel')
+  check('like a Short', (await req('POST', `/posts/${short._id}/react`, C.token, { type: 'like' })).body.reactionCount === 1)
+  check('comment on a Short', (await req('POST', `/posts/${short._id}/comments`, A.token, { text: 'So good!' })).status === 200)
+  check('save a Short', (await req('POST', `/posts/${short._id}/save`, C.token)).body.saved === true)
+  const again = (await req('GET', '/explore?reels=1&before=x:1', B.token)).body.posts[0]
+  check('same Short, same post (counts kept)', again._id === short._id && again.reactionCount === 1 && again.commentCount === 1)
+  check('open a Short on its own', (await req('GET', '/posts/' + short._id, B.token)).body.post.media[0].youtube === short.media[0].youtube)
+  check('share a Short in Direct', (await req('POST', '/dm/share', A.token, { postId: short._id, userIds: [C.id] })).body.sent === 1)
+  check("can't delete a Short", (await req('DELETE', '/posts/' + short._id, A.token)).status === 404)
+  check('Shorts stay out of hashtag pages', !(await req('GET', '/hashtags/shorts?app=pixify', C.token)).body.posts.length)
 
   const e1 = await req('GET', '/explore?before=x:1', C.token)
   check('Explore page of Shorts', e1.body.posts.length === 24 && e1.body.posts.every((p) => p.media[0].youtube) && e1.body.next === 'x:2')

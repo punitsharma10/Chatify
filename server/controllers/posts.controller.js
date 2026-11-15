@@ -218,6 +218,24 @@ const feed = handle(async (req) => {
 // posts have been shown, YouTube Shorts continue (only if YOUTUBE_API_KEY is set).
 // Paging cursor (?before=): "p:N" = page N of our posts, "x:K" = page K of YouTube Shorts.
 const youtube = require('../helpers/youtube')
+
+// each YouTube Short is kept as a post (once) so it can be liked, commented on, saved and shared like any reel
+const mirrorShorts = async (shorts, ctx) => {
+    if (!shorts.length) return []
+    await PostModel.bulkWrite(shorts.map((s) => ({
+        updateOne : {
+            filter : { 'external.key' : s._id },
+            update : {
+                $setOnInsert : { app : 'pixify', isReel : true, commentsOff : false, createdAt : new Date(s.createdAt || Date.now()) },
+                $set : { text : String(s.text || '').slice(0, 2200), media : s.media, external : { source : 'YouTube', key : s._id, by : s.external.by, byUrl : s.external.byUrl, link : s.external.link } }
+            },
+            upsert : true
+        }
+    })), { ordered : false })
+    const docs = await PostModel.find({ 'external.key' : { $in : shorts.map((s) => s._id) } }).lean()
+    const byKey = Object.fromEntries(docs.map((d) => [d.external.key, d]))
+    return S.serializePosts(shorts.map((s) => byKey[s._id]).filter(Boolean), ctx)
+}
 const explore = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'pixify')
     const reels = req.query.reels === '1'
@@ -227,8 +245,9 @@ const explore = handle(async (req) => {
     if (cursor.startsWith('x:')) {
         const k = Math.max(1, parseInt(cursor.slice(2), 10) || 1)
         try {
-            const posts = reels ? await youtube.reels(k, per) : await youtube.explore(k, per)
-            return { posts, next : posts.length && k < 500 ? `x:${k + 1}` : null }
+            const shorts = reels ? await youtube.reels(k, per) : await youtube.explore(k, per)
+            const posts = await mirrorShorts(shorts, ctx)
+            return { posts, next : shorts.length && k < 500 ? `x:${k + 1}` : null }
         } catch (error) {
             console.error('[youtube]', error.message)
             return { posts : [], next : null }
@@ -394,7 +413,7 @@ const hashtag = handle(async (req) => {
     const app = appOf(req.query.app)
     const tag = String(req.params.tag || '').replace(/^#/, '')
     if (!HASHTAG.test(tag)) throw new S.SocialError('Invalid hashtag')
-    const filter = { app, archived : { $ne : true }, text : { $regex : `#${escapeRegex(tag)}(?![\\p{L}\\p{N}_])`, $options : 'i' } }
+    const filter = { app, archived : { $ne : true }, 'external.key' : { $exists : false }, text : { $regex : `#${escapeRegex(tag)}(?![\\p{L}\\p{N}_])`, $options : 'i' } }
     const ctx = await S.viewerContext(req.user, app)
     const [raw, count] = await Promise.all([
         PostModel.find({ ...filter, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE * 2).lean(),

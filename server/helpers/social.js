@@ -93,7 +93,11 @@ const viewerContext = async (viewer, app) => {
 // may the viewer see this account's Pixify posts? (public, or I follow them, or it's me)
 const canViewPixifyProfile = (author, ctx) => String(author._id) === ctx.me || !author.pixify?.private || ctx.following.has(String(author._id))
 
+// a YouTube Short's "author" is its channel (not a Chatify account)
+const externalAuthor = (p) => ({ _id : p.external.source === 'YouTube' ? 'youtube' : 'external', name : p.external.by || p.external.source, profileName : p.external.by || p.external.source, username : '', profile_pic : '', external : true })
+
 const canSeePost = (post, author, ctx) => {
+    if (post?.external?.key) return true
     if (!post || !author || author.deletedAt) return false
     if (String(author._id) === ctx.me) return true
     if (blockedEitherWay(ctx.viewer, author)) return false
@@ -134,7 +138,7 @@ const serializePosts = async (posts, ctx) => {
     const groups = groupIds.length ? Object.fromEntries((await require('../models/cxGroup.model').CxGroupModel.find({ _id : { $in : groupIds } }).select('name privacy cover').lean()).map((g) => [String(g._id), g])) : {}
 
     const one = (p, depth = 0) => {
-        const author = users[String(p.author)]
+        const author = p.external?.key ? externalAuthor(p) : users[String(p.author)]
         const group = p.group ? groups[String(p.group)] : null
         if (p.group && !group) return null
         if (!canSeePost(group ? { ...p, groupPrivate : group.privacy === 'private' } : p, author, ctx)) return null
@@ -145,7 +149,10 @@ const serializePosts = async (posts, ctx) => {
         const out = {
             _id : String(p._id),
             app : p.app,
-            author : personCard(author, ctx.viewer),
+            author : p.external?.key ? author : personCard(author, ctx.viewer),
+            ...(p.external?.key ? { external : { source : p.external.source, by : p.external.by, byUrl : p.external.byUrl, link : p.external.link } } : {}),
+            // Reels show "Follow" next to accounts you don't follow yet
+            ...(ctx.app === 'pixify' && !p.external?.key ? { followingAuthor : ctx.following.has(String(p.author)) } : {}),
             text : p.text || '',
             media : p.media || [],
             audience : p.audience,
@@ -184,7 +191,7 @@ const loadVisiblePost = async (postId, ctx) => {
     if (!isValidId(String(postId))) throw new SocialError('Post not found', 404)
     const post = await PostModel.findById(postId).lean()
     if (!post) throw new SocialError('This post is no longer available', 404)
-    const author = (await loadUsers([post.author]))[String(post.author)]
+    const author = post.external?.key ? externalAuthor(post) : (await loadUsers([post.author]))[String(post.author)]
     let check = post
     if (post.group) {
         const g = await require('../models/cxGroup.model').CxGroupModel.findById(post.group).select('privacy').lean()
