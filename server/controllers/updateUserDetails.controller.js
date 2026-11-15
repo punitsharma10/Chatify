@@ -1,5 +1,6 @@
 const UserModel = require("../models/user.model");
 const { isAllowedMediaUrl } = require("../helpers/chat");
+const { normalizeUsername, usernameProblem, usernameAvailable } = require("../helpers/username");
 
 const VISIBILITY = ['everyone', 'contacts', 'nobody'];
 
@@ -22,6 +23,17 @@ const updateUserDetails = async (req, res) => {
         return res.status(400).json({ message: "Invalid profile photo", error: true });
       }
       update.profile_pic = profile_pic || "";
+    }
+
+    // one @username for Chats, Pixify and Connectify
+    if (req.body.username !== undefined) {
+      const username = normalizeUsername(req.body.username);
+      const problem = usernameProblem(username);
+      if (problem) return res.status(400).json({ message: problem, error: true, code: 'username' });
+      if (!(await usernameAvailable(username, req.user._id))) {
+        return res.status(400).json({ message: "This username is taken.", error: true, code: 'username' });
+      }
+      update.username = username;
     }
 
     if (about !== undefined) {
@@ -87,6 +99,10 @@ const updateUserDetails = async (req, res) => {
       success: true,
     });
   } catch (error) {
+    // two people chose the same free username at the same moment
+    if (error?.code === 11000 && error?.keyPattern?.username) {
+      return res.status(400).json({ message: "This username is taken.", error: true, code: 'username' });
+    }
     return res.status(500).json({
       message: error.message || error,
       error: true,

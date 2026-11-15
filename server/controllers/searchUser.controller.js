@@ -1,5 +1,6 @@
 const UserModel = require('../models/user.model')
 const { escapeRegex, publicUser } = require('../helpers/chat')
+const { normalizeUsername, usernameProblem } = require('../helpers/username')
 
 // Turns what someone typed into the phone numbers it could mean (E.164).
 // "+91 98765-43210" -> ["+919876543210"];  "9876543210" -> ["+919876543210", "+9876543210"] (India by default)
@@ -37,6 +38,7 @@ const searchUser = async (req, res) => {
                 c.name.toLowerCase().includes(q) ||
                 (c.profileName || '').toLowerCase().includes(q) ||
                 (c.email || '').toLowerCase().includes(q) ||
+                (c.username && c.username.includes(q.replace(/^@/, ''))) ||
                 (digits.length >= 3 && (c.phone || '').includes(digits)))
         }
         contacts.sort((a, b) => a.name.localeCompare(b.name))
@@ -48,6 +50,11 @@ const searchUser = async (req, res) => {
             if (looksLikeEmail(search)) or.push({ email : new RegExp(`^${escapeRegex(search)}$`, 'i') })
             const phones = phoneCandidates(search)
             if (phones.length) or.push({ phone : { $in : phones } })
+            // an exact @username also finds someone new (still no partial matches, so nobody can browse)
+            const handle = normalizeUsername(search)
+            if (search.startsWith('@') || (!phones.length && !looksLikeEmail(search))) {
+                if (!usernameProblem(handle)) or.push({ username : handle, deletedAt : { $exists : false } })
+            }
             if (or.length) {
                 const found = await UserModel.find({ $or : or }).select('-password').limit(3).lean()
                 const shown = new Set(contacts.map((c) => String(c._id)))

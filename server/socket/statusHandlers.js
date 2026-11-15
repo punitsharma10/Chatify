@@ -3,7 +3,7 @@ const UserModel = require('../models/user.model')
 const StatusModel = require('../models/status.model')
 const { isValidId, isAllowedMediaUrl, publicUser, hasBlocked } = require('../helpers/chat')
 const { cleanEnvelope, viewEnvelope, keysOnlyFor, publicDevice } = require('../helpers/e2ee')
-const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, audienceFor, canSeeStatus } = require('../helpers/status')
+const { STATUS_TTL_MS, STATUS_BACKGROUNDS, STATUS_FONTS, STATUS_APPS, SHARED_APPS, normalizeApps, appsOf, audienceFor, appAudienceFor, viewersOf, canSeeStatus } = require('../helpers/status')
 
 class UserError extends Error {}
 
@@ -18,6 +18,7 @@ const serialize = (st, viewerId) => {
         font : st.font || 0,
         mediaUrl : st.mediaUrl || '',
         caption : st.caption || '',
+        apps : appsOf(st),
         ...(st.e2ee ? { e2ee : viewEnvelope(st.e2ee, viewerId) } : {}),
         createdAt : st.createdAt,
         expiresAt : st.expiresAt,
@@ -58,10 +59,27 @@ module.exports = function registerStatusHandlers(io, socket) {
         return { users : Object.fromEntries(users.filter((u) => !u.deletedAt).map((u) => [String(u._id), (u.devices || []).map(publicDevice)])) }
     })
 
-    on('status-post', async ({ kind, text, background, font, mediaUrl, caption, e2ee } = {}) => {
+    // apps: where the story shows, any of ['chats', 'pixify', 'connectify'] (default: Chats only)
+    on('status-post', async ({ kind, text, background, font, mediaUrl, caption, e2ee, apps : rawApps } = {}) => {
         if (!['text', 'image', 'video'].includes(kind)) throw new UserError('Invalid status')
+        const apps = normalizeApps(rawApps)
+        if (!apps) throw new UserError('Choose where to share this update')
+        const shared = apps.some((a) => SHARED_APPS.includes(a))
+        // Pixify / Connectify stories are readable by the server, so they can't carry an encrypted body
+        if (e2ee && shared) throw new UserError("Updates shared to Pixify or Connectify can't be end-to-end encrypted")
         const owner = await loadUser(me)
-        const doc = { userId : meId, kind, expiresAt : new Date(Date.now() + STATUS_TTL_MS), audience : audienceFor(owner) }
+        const doc = {
+            userId : meId,
+            kind,
+            expiresAt : new Date(Date.now() + STATUS_TTL_MS),
+            apps,
+            audience : apps.includes('chats') ? audienceFor(owner) : []
+        }
+        if (shared) {
+            doc.appAudience = {}
+            for (const app of SHARED_APPS.filter((a) => apps.includes(a))) doc.appAudience[app] = await appAudienceFor(owner, app)
+            doc.shareAudience = [...new Set(Object.values(doc.appAudience).flat().map(String))]
+        }
         if (e2ee) {
             // encrypted on the device for the audience (people the status is shared with) + my own devices
             const env = cleanEnvelope(e2ee, me)
@@ -85,15 +103,20 @@ module.exports = function registerStatusHandlers(io, socket) {
         }
         const st = await StatusModel.create(doc)
         // people who can see it refresh their Updates list; my other tabs too
-        for (const uid of [...doc.audience, me]) io.to(String(uid)).emit('status-changed', { userId : me })
+        for (const uid of [...viewersOf(doc), me]) io.to(String(uid)).emit('status-changed', { userId : me, apps })
         return { status : serialize(st.toObject(), me) }
     })
 
-    on('status-list', async () => {
+    // the updates shown in one app: Chats' Status tab, or the Pixify / Connectify stories bar
+    on('status-list', async ({ app = 'chats' } = {}) => {
+        if (!STATUS_APPS.includes(app)) throw new UserError('Invalid app')
         const meUser = await loadUser(me)
+        // older updates have no `apps` list and belong to Chats
+        const inApp = app === 'chats' ? { $or : [{ apps : 'chats' }, { apps : { $exists : false } }] } : { apps : app }
+        const sharedWithMe = app === 'chats' ? { audience : meId } : { [`appAudience.${app}`] : meId }
         const [mine, others] = await Promise.all([
-            StatusModel.find({ userId : meId, ...liveNow() }).sort({ createdAt : 1 }).lean(),
-            StatusModel.find({ audience : meId, ...liveNow() }).sort({ createdAt : 1 }).limit(1000).lean()
+            StatusModel.find({ userId : meId, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).lean(),
+            StatusModel.find({ ...sharedWithMe, ...inApp, ...liveNow() }).sort({ createdAt : 1 }).limit(1000).lean()
         ])
         const ownerIds = [...new Set(others.map((s) => String(s.userId)))]
         const owners = await UserModel.find({ _id : { $in : ownerIds } }).select('-password').lean()
@@ -153,7 +176,7 @@ module.exports = function registerStatusHandlers(io, socket) {
         if (!isValidId(String(statusId))) throw new UserError('Status not found')
         const st = await StatusModel.findOneAndDelete({ _id : statusId, userId : meId }).lean()
         if (!st) throw new UserError('Status not found')
-        for (const uid of [...(st.audience || []), me]) io.to(String(uid)).emit('status-changed', { userId : me, removed : String(st._id) })
+        for (const uid of [...viewersOf(st), me]) io.to(String(uid)).emit('status-changed', { userId : me, removed : String(st._id), apps : appsOf(st) })
         return {}
     })
 

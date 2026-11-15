@@ -51,6 +51,9 @@ const deleteAccount = async (req, res) => {
 
     await StatusModel.deleteMany({ userId: me });
 
+    // Pixify + Connectify: posts, comments, follows, friendships, notifications
+    await require("../helpers/socialCleanup")(me);
+
     // erase the profile; the document stays so existing chats still have a sender ("Deleted account")
     await UserModel.updateOne({ _id: me }, {
       $set: {
@@ -59,7 +62,7 @@ const deleteAccount = async (req, res) => {
         "privacy.lastSeen": "nobody", "privacy.online": "nobody", "privacy.profilePhoto": "nobody", "privacy.about": "nobody",
         deletedAt: now, passwordChangedAt: now,
       },
-      $unset: { email: 1, phone: 1, chatLockCode: 1, lastSeen: 1, devices: 1 },
+      $unset: { email: 1, phone: 1, chatLockCode: 1, lastSeen: 1, devices: 1, username: 1, savedPosts: 1, pixify: 1, connectify: 1 },
     });
 
     const sessions = await SessionModel.find({ userId: me, revokedAt: null }).select("_id").lean();

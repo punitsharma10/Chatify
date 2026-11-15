@@ -23,7 +23,7 @@ const UserSearchCard = ({ user, onClose, onAdd }) => {
             <span className='truncate text-[17px] text-wa-text'>{names.name(user)}{user?.self ? ' (You)' : ''}</span>
             {hint && <span className='shrink-0 truncate text-[13px] text-wa-muted'>{hint}</span>}
           </div>
-          <p className='truncate text-sm text-wa-muted'>{user?.about || contactLine(user)}</p>
+          <p className='truncate text-sm text-wa-muted'>{user?.username && <span className='text-wa-text/80'>@{user.username}{(user?.about || contactLine(user)) ? ' · ' : ''}</span>}{user?.about || contactLine(user)}</p>
         </div>
       </Link>
       {onAdd && (

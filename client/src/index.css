@@ -57,6 +57,54 @@
     --wa-dots: 233 237 239;
   }
   .dark select, .dark input, .dark textarea { color-scheme: dark; }
+
+  /* Pixify (Instagram-style) and Connectify (Facebook-style) palettes; they follow the same light / dark setting */
+  :root {
+    --px-bg: 255 255 255;
+    --px-text: 0 0 0;
+    --px-muted: 115 115 115;
+    --px-border: 219 219 219;
+    --px-hover: 242 242 242;
+    --px-raised: 239 239 239;
+    --px-blue: 0 149 246;
+    --cx-bg: 240 242 245;
+    --cx-card: 255 255 255;
+    --cx-text: 5 5 5;
+    --cx-muted: 101 103 107;
+    --cx-border: 206 208 212;
+    --cx-hover: 242 242 242;
+    --cx-input: 240 242 245;
+    --cx-blue: 24 119 242;
+  }
+  .dark {
+    --px-bg: 0 0 0;
+    --px-text: 245 245 245;
+    --px-muted: 168 168 168;
+    --px-border: 38 38 38;
+    --px-hover: 26 26 26;
+    --px-raised: 38 38 38;
+    --px-blue: 0 149 246;
+    --cx-bg: 24 25 26;
+    --cx-card: 36 37 38;
+    --cx-text: 228 230 235;
+    --cx-muted: 176 179 184;
+    --cx-border: 62 64 66;
+    --cx-hover: 58 59 60;
+    --cx-input: 58 59 60;
+    --cx-blue: 45 136 255;
+  }
+}
+
+/* Connectify Messages reuse the Pixify Direct screens: inside .cx-as-px the Pixify colours become Connectify's
+   (light and dark follow automatically, because the Connectify colours already switch with the theme). */
+.cx-as-px {
+  --px-bg: var(--cx-card);
+  --px-text: var(--cx-text);
+  --px-muted: var(--cx-muted);
+  --px-border: var(--cx-border);
+  --px-hover: var(--cx-hover);
+  --px-raised: var(--cx-input);
+  --px-blue: var(--cx-blue);
 }
 
 /* Reusable component classes. Kept inside the components layer so responsive

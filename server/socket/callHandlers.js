@@ -271,7 +271,9 @@ module.exports = function registerCallHandlers(io, socket) {
 
         // privacy: you can call people who saved you, or who you already chat with (not an unaccepted request)
         const conv = await findConversation(me, String(to))
-        const consented = !!contactOf(callee, me) || (conv && String(conv.requestFor || '') !== String(to))
+        // ...or an accepted Pixify Direct conversation
+        const consented = !!contactOf(callee, me) || (conv && String(conv.requestFor || '') !== String(to)) ||
+            await require('../controllers/dm.controller').acceptedBetween(me, to)
         if (!consented) throw fail(`You can call ${calleeName} after they accept your message or save you as a contact`)
 
         if (inCall.has(me)) throw fail("You're already on a call")
