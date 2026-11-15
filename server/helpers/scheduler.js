@@ -34,6 +34,8 @@ const tick = async (io) => {
                 : { $set : { status : 'failed', error : res.error || 'Could not send' } })
             io.to(String(job.userId)).emit('scheduled-changed', { id : String(job._id), status : res.ok ? 'sent' : 'failed', error : res.error })
         }
+        // scheduled Pixify / Connectify posts
+        await require('../controllers/postExtras.controller').publishDue()
         // reminders
         const due = await ReminderModel.find({ firedAt : null, done : false, remindAt : { $lte : now } }).limit(100).lean()
         for (const r of due) {

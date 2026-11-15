@@ -158,7 +158,7 @@ const PixifyLayout = () => {
         {story.element}
         {send.element}
         {/* Instagram-style floating Messages button (not inside Messages itself) */}
-        {!direct && <MessagesPill />}
+        {!direct && <MessagesPill className={pathname.startsWith('/pixify/reels') ? 'max-xl:hidden' : pathname.startsWith('/pixify/p/') ? 'max-md:hidden' : ''} />}
         {sharing && <ShareSheet {...sharing} onClose={() => setSharing(null)} onChats={send.open} />}
         {user._id && !user.username && <UsernamePrompt />}
       </div>

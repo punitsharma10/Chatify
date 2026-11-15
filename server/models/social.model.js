@@ -12,7 +12,9 @@ const mediaSchema = new mongoose.Schema({
     height : Number,
     // YouTube Short: video id (plays in YouTube's player) and its preview image
     youtube : String,
-    poster : String
+    poster : String,
+    // alt text (describes the photo for screen readers)
+    alt : { type : String, maxlength : 200 }
 }, { _id : false })
 
 // A post in one app. Pixify: photos / videos + caption (visibility follows the account: public, or followers if
@@ -32,7 +34,18 @@ const postSchema = new mongoose.Schema({
     },
     media : { type : [mediaSchema], default : [] },
     // Connectify only; Pixify posts are 'public' and checked against the author's private-account setting
-    audience : { type : String, enum : ['public', 'friends', 'only_me'], default : 'public' },
+    audience : { type : String, enum : ['public', 'friends', 'only_me', 'specific', 'except'], default : 'public' },
+    // Connectify custom audience: 'specific' = only these friends, 'except' = friends except these
+    audienceList : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    // Pixify collab post: invited co-authors; accepted ones show as authors and get it on their profile + followers' feeds
+    collaborators : { type : [{ userId : { type : ObjectId, ref : 'User' }, status : { type : String, enum : ['pending', 'accepted'], default : 'pending' }, _id : false }], default : undefined },
+    // scheduled post: hidden from everyone (shown in the author's "Scheduled" list) until it's published at this time
+    scheduledFor : { type : Date },
+    // Connectify poll: options with the people who chose each one
+    poll : {
+        options : { type : [{ text : { type : String, maxlength : 80 }, votes : { type : [{ type : ObjectId, ref : 'User' }], default : [] }, _id : false }], default : undefined },
+        multiple : { type : Boolean }
+    },
     // Connectify: a share of someone else's post
     sharedPost : { type : ObjectId, ref : 'Post' },
     // Connectify: coloured text post background
@@ -63,7 +76,9 @@ const postSchema = new mongoose.Schema({
     // Reels plays
     views : { type : Number, default : 0 },
     // Connectify: posted inside a group
-    group : { type : ObjectId, ref : 'CxGroup' }
+    group : { type : ObjectId, ref : 'CxGroup' },
+    // Connectify: posted by an admin as this Page (shown with the Page's name and picture, always public)
+    page : { type : ObjectId, ref : 'CxPage' }
 }, { timestamps : true })
 
 postSchema.index({ app : 1, author : 1, createdAt : -1 })
@@ -72,7 +87,10 @@ postSchema.index({ app : 1, createdAt : -1 })
 postSchema.index({ app : 1, isReel : 1, createdAt : -1 })
 postSchema.index({ tagged : 1, createdAt : -1 }, { partialFilterExpression : { 'tagged.0' : { $exists : true } } })
 postSchema.index({ group : 1, createdAt : -1 }, { partialFilterExpression : { group : { $exists : true } } })
+postSchema.index({ page : 1, createdAt : -1 }, { partialFilterExpression : { page : { $exists : true } } })
 postSchema.index({ 'reactions.userId' : 1 })
+postSchema.index({ scheduledFor : 1 }, { partialFilterExpression : { scheduledFor : { $exists : true } } })
+postSchema.index({ 'collaborators.userId' : 1 }, { partialFilterExpression : { 'collaborators.0' : { $exists : true } } })
 
 const commentSchema = new mongoose.Schema({
     post : { type : ObjectId, ref : 'Post', required : true },
@@ -108,7 +126,7 @@ friendshipSchema.index({ to : 1, status : 1 })
 friendshipSchema.index({ from : 1, status : 1 })
 
 // What happened to you in Pixify / Connectify (likes, comments, follows, friend requests, ...)
-const NOTIFICATION_TYPES = ['like', 'react', 'comment', 'reply', 'comment_like', 'mention', 'follow', 'follow_request', 'follow_accept', 'friend_request', 'friend_accept', 'share', 'tag', 'poke', 'group_invite', 'group_post', 'group_join_request', 'group_join_accept', 'event_invite', 'event_going', 'listing_message']
+const NOTIFICATION_TYPES = ['like', 'react', 'comment', 'reply', 'comment_like', 'mention', 'follow', 'follow_request', 'follow_accept', 'friend_request', 'friend_accept', 'share', 'tag', 'poke', 'group_invite', 'group_post', 'group_join_request', 'group_join_accept', 'event_invite', 'event_going', 'listing_message', 'collab_invite', 'collab_accept', 'post_published', 'page_follow']
 const notificationSchema = new mongoose.Schema({
     user : { type : ObjectId, ref : 'User', required : true },   // who it's for
     actor : { type : ObjectId, ref : 'User', required : true },  // who did it
@@ -120,6 +138,7 @@ const notificationSchema = new mongoose.Schema({
     // Connectify groups / events
     group : { type : ObjectId, ref : 'CxGroup' },
     event : { type : ObjectId, ref : 'CxEvent' },
+    page : { type : ObjectId, ref : 'CxPage' },
     text : { type : String, default : '', maxlength : 200 }, // comment preview
     read : { type : Boolean, default : false }
 }, { timestamps : true })

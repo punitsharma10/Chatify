@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { IoPaperPlaneOutline, IoEllipsisHorizontal, IoClose, IoExpandOutline, IoCreateOutline } from 'react-icons/io5'
 import Avatar from '../../Avatar'
 import { api, useSocialUnread, shortAgo, useOnVisible } from '../../../helpers/social'
@@ -17,6 +17,10 @@ export const MessagesPopup = ({ onClose, unreadCount }) => {
   const more = useOnVisible(list.loadMore, !!list.next)
   const [open, setOpen] = useState(null) // thread id shown inside the popup
   const [newMessage, setNewMessage] = useState(false)
+  // going to another page (e.g. a new chat opened in Messages) closes the popup
+  const { pathname } = useLocation()
+  const firstPath = React.useRef(pathname)
+  useEffect(() => { if (pathname !== firstPath.current) onClose() }, [pathname, onClose])
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -28,7 +32,7 @@ export const MessagesPopup = ({ onClose, unreadCount }) => {
     <div role='dialog' aria-label='Messages'
       className='fixed inset-x-2 bottom-[60px] top-16 z-50 flex animate-pop flex-col overflow-hidden rounded-2xl bg-px-bg text-px-text shadow-[0_8px_40px_rgba(0,0,0,0.3)] ring-1 ring-px-border md:inset-x-auto md:bottom-6 md:right-6 md:top-auto md:h-[min(640px,calc(100dvh-120px))] md:w-[440px]'>
       {open ? (
-        <div className='min-h-0 flex-1'><DirectThread threadId={open} embedded onBack={() => setOpen(null)} /></div>
+        <div className='min-h-0 flex-1'><DirectThread threadId={open} embedded onBack={() => setOpen(null)} onEnlarge={enlarge} /></div>
       ) : (
         <>
           <header className='flex h-14 shrink-0 items-center gap-2 border-b border-px-border px-4'>
@@ -71,12 +75,12 @@ export const MessagesPopup = ({ onClose, unreadCount }) => {
           </button>
         </>
       )}
-      {newMessage && <NewMessageModal onClose={() => { setNewMessage(false); onClose() }} />}
+      {newMessage && <NewMessageModal onClose={() => setNewMessage(false)} />}
     </div>
   )
 }
 
-const MessagesPill = () => {
+const MessagesPill = ({ className = '' }) => {
   const unread = useSocialUnread()
   const [threads, setThreads] = useState([])
   const [popup, setPopup] = useState(false)
@@ -90,7 +94,7 @@ const MessagesPill = () => {
   if (popup) return <MessagesPopup onClose={() => setPopup(false)} unreadCount={unread.dm} />
   return (
     <button onClick={() => setPopup(true)} aria-label={`Messages${unread.dm ? `, ${unread.dm} unread` : ''}`}
-      className='fixed bottom-[60px] right-3 z-30 flex h-12 items-center gap-2.5 rounded-full bg-px-bg pl-4 pr-3 text-px-text shadow-[0_4px_18px_rgba(0,0,0,0.18)] ring-1 ring-px-border transition hover:bg-px-hover md:bottom-6 md:right-6 md:h-14 md:gap-3 md:pl-5 md:pr-4'>
+      className={`${className} fixed bottom-[60px] right-3 z-30 flex h-12 max-md:h-11 max-md:pl-3 max-md:[&>span:nth-child(2)]:hidden items-center gap-2.5 rounded-full bg-px-bg pl-4 pr-3 text-px-text shadow-[0_4px_18px_rgba(0,0,0,0.18)] ring-1 ring-px-border transition hover:bg-px-hover md:bottom-6 md:right-6 md:h-14 md:gap-3 md:pl-5 md:pr-4`}>
       <span className='relative'>
         <IoPaperPlaneOutline size={24} />
         {unread.dm > 0 && <span className='absolute -bottom-1.5 -left-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#ff3040] px-1 text-[11px] font-semibold text-white ring-2 ring-px-bg'>{unread.dm > 99 ? '99+' : unread.dm}</span>}

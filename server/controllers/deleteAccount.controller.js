@@ -53,6 +53,8 @@ const deleteAccount = async (req, res) => {
 
     // Pixify + Connectify: posts, comments, follows, friendships, notifications
     await require("../helpers/socialCleanup")(me);
+    // Pixify story archive + highlights; I leave everyone's Close friends list
+    await require("./highlights.controller").deleteHighlightsFor(me);
 
     // erase the profile; the document stays so existing chats still have a sender ("Deleted account")
     await UserModel.updateOne({ _id: me }, {

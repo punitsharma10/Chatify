@@ -164,6 +164,7 @@ const follow = handle(async (req) => {
         if (e?.code !== 11000) throw e
     }
     await S.notify({ user : user._id, actor : me, app : 'pixify', type : status === 'pending' ? 'follow_request' : 'follow' })
+    if (status === 'active') await require('./dm.controller').promoteRequest(me, user._id, 'pixify').catch(() => {})
     return { followStatus : status }
 })
 
@@ -186,6 +187,8 @@ const answerFollowRequest = handle(async (req) => {
     if (accept) {
         await S.notify({ user : user._id, actor : req.user._id, app : 'pixify', type : 'follow_accept' })
         await S.notify({ user : req.user._id, actor : user._id, app : 'pixify', type : 'follow' })
+        // they now follow me: my waiting message to them moves to their inbox
+        await require('./dm.controller').promoteRequest(user._id, req.user._id, 'pixify').catch(() => {})
     }
     return { accepted : accept }
 })
@@ -284,6 +287,9 @@ const accept = async (f, user, me) => {
     await FriendshipModel.updateOne({ _id : f._id }, { $set : { status : 'accepted', acceptedAt : new Date() } })
     await NotificationModel.deleteMany({ user : me, actor : user._id, app : 'connectify', type : 'friend_request' })
     await S.notify({ user : user._id, actor : me, app : 'connectify', type : 'friend_accept' })
+    const { promoteRequest } = require('./dm.controller')
+    await promoteRequest(me, user._id, 'connectify').catch(() => {})
+    await promoteRequest(user._id, me, 'connectify').catch(() => {})
     return { friendStatus : 'friends' }
 }
 
@@ -365,13 +371,19 @@ const search = handle(async (req) => {
     }))
     // people I know first, then exact username match, then the rest
     const rank = (p) => (p.username === q.toLowerCase() ? 0 : 2) - (p.following || p.isFriend ? 1 : 0) - (p.isContact ? 0.5 : 0)
-    return { people : people.sort((a, b) => rank(a) - rank(b)).slice(0, 20), tags : await hashtagsLike(app, q.replace(/^#/, '')) }
+    return { people : people.sort((a, b) => rank(a) - rank(b)).slice(0, 20), tags : await hashtagsLike(app, q.replace(/^#/, ''), req.user) }
 })
 
 // hashtags used in recent posts that start with `q`, most used first
-const hashtagsLike = async (app, q) => {
+const hashtagsLike = async (app, q, viewer) => {
     if (!/^[\p{L}\p{N}_]{1,60}$/u.test(q)) return []
-    const posts = await PostModel.find({ app, archived : { $ne : true }, 'external.key' : { $exists : false }, text : { $regex : `#${escapeRegex(q)}`, $options : 'i' } }).sort({ createdAt : -1 }).limit(300).select('text').lean()
+    const raw = await PostModel.find({ app, archived : { $ne : true }, 'external.key' : { $exists : false }, text : { $regex : `#${escapeRegex(q)}`, $options : 'i' } }).sort({ createdAt : -1 }).limit(300).select('text app author archived audience group').lean()
+    const ctx = await S.viewerContext(viewer, app)
+    const authors = await S.loadUsers(raw.map((p) => p.author))
+    const { CxGroupModel } = require('../models/cxGroup.model')
+    const gIds = raw.filter((p) => p.group).map((p) => p.group)
+    const groups = gIds.length ? Object.fromEntries((await CxGroupModel.find({ _id : { $in : gIds } }).select('privacy').lean()).map((g) => [String(g._id), g])) : {}
+    const posts = raw.filter((p) => (p.group ? !!groups[String(p.group)] && S.canSeePost({ ...p, groupPrivate : groups[String(p.group)].privacy === 'private' }, authors[String(p.author)], ctx) : S.canSeePost(p, authors[String(p.author)], ctx)))
     const counts = {}
     const prefix = q.toLowerCase()
     for (const p of posts) {
@@ -475,6 +487,8 @@ const notifications = handle(async (req) => {
         CxEventModel.find({ _id : { $in : list.filter((n) => n.event).map((n) => n.event) } }).select('title cover startsAt').lean()
     ])
     const groupById = Object.fromEntries(groups.map((g) => [String(g._id), g]))
+    const pageIds = list.filter((n) => n.page).map((n) => n.page)
+    const pageById = pageIds.length ? Object.fromEntries((await require('../models/cxPage.model').CxPageModel.find({ _id : { $in : pageIds } }).select('name avatar').lean()).map((p) => [String(p._id), p])) : {}
     const eventById = Object.fromEntries(events.map((e) => [String(e._id), e]))
     // current state for follow / friend notices (so the right button shows)
     const actorIds = [...new Set(list.map((n) => String(n.actor)))]
@@ -492,6 +506,7 @@ const notifications = handle(async (req) => {
                 post : p ? { _id : String(p._id), thumb : p.media?.[0] || null, text : (p.text || '').slice(0, 80), background : p.background || '' } : null,
                 comment : n.comment ? String(n.comment) : null,
                 ...(n.group && groupById[String(n.group)] ? { group : { _id : String(n.group), name : groupById[String(n.group)].name, cover : groupById[String(n.group)].cover || '' } } : {}),
+                ...(n.page && pageById[String(n.page)] ? { page : { _id : String(n.page), name : pageById[String(n.page)].name, avatar : pageById[String(n.page)].avatar || '' } } : {}),
                 ...(n.event && eventById[String(n.event)] ? { event : { _id : String(n.event), title : eventById[String(n.event)].title, startsAt : eventById[String(n.event)].startsAt } } : {}),
                 reaction : n.reaction || null,
                 text : n.text || '',

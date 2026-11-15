@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   IoPeople, IoAdd, IoEarth, IoLockClosed, IoCalendar, IoLocationSharp, IoStar, IoStarOutline, IoCheckmarkCircle, IoCheckmarkCircleOutline,
-  IoStorefront, IoBookmark, IoBookmarkOutline, IoChatbubbleEllipses, IoCamera, IoClose, IoArrowBack, IoGift, IoHandLeft, IoTime, IoPlayCircle, IoSearchOutline, IoPersonAdd,
+  IoStorefront, IoBookmark, IoBookmarkOutline, IoChatbubbleEllipses, IoCamera, IoClose, IoArrowBack, IoGift, IoHandLeft, IoTime, IoPlayCircle, IoSearchOutline, IoPersonAdd, IoFlag,
 } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, enc, usePaged, useOnVisible, uploadMedia, longAgo, compact } from '../../helpers/social'
@@ -11,26 +11,27 @@ import { notify, notifyError } from '../../helpers/toast'
 import { Modal, ActionSheet, MediaThumb, PeopleModal } from '../social/common'
 import { PeoplePicker } from '../social/extras'
 import { useConnectify, Card } from './ConnectifyLayout'
-import { CxPostCard } from './CxPost'
+import { CxPostCard, removeHidden } from './CxPost'
+import { ScheduledList } from '../pixify/PixifyExtras'
 
 // Facebook-style Groups, Events, Marketplace, Watch, Memories, Saved, Birthdays, Pokes and #hashtags.
 
 const userLink = (p) => `/connectify/u/${p.username || p._id}`
-const Spinner = () => <span className='mx-auto my-10 block h-7 w-7 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />
-const Btn = ({ primary, className = '', ...rest }) => <button className={`flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[15px] font-semibold disabled:opacity-50 ${primary ? 'bg-cx-blue text-white hover:brightness-95' : 'bg-cx-input hover:brightness-95'} ${className}`} {...rest} />
+export const Spinner = () => <span className='mx-auto my-10 block h-7 w-7 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />
+export const Btn = ({ primary, className = '', ...rest }) => <button className={`flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[15px] font-semibold disabled:opacity-50 ${primary ? 'bg-cx-blue text-white hover:brightness-95' : 'bg-cx-input hover:brightness-95'} ${className}`} {...rest} />
 const Page = ({ title, action, children, wide }) => (
   <div className={`mx-auto px-0 py-4 sm:px-4 ${wide ? 'max-w-[1100px]' : 'max-w-[680px]'}`}>
     <div className='mb-3 flex items-center justify-between gap-3 px-3 sm:px-0'><h1 className='text-2xl font-bold'>{title}</h1>{action}</div>
     {children}
   </div>
 )
-const Tabs = ({ tabs, value, onChange }) => (
+export const Tabs = ({ tabs, value, onChange }) => (
   <div className='mb-3 flex gap-2 overflow-x-auto px-3 scrollbar-none sm:px-0'>
     {tabs.map(([id, label]) => <button key={id} onClick={() => onChange(id)} className={`h-9 shrink-0 rounded-full px-4 text-[15px] font-semibold ${value === id ? 'bg-cx-blue/15 text-cx-blue' : 'bg-cx-input hover:brightness-95'}`}>{label}</button>)}
   </div>
 )
-const field = 'mt-1 w-full rounded-md border border-cx-border bg-cx-input px-3 outline-none focus:border-cx-blue'
-const useFriends = () => {
+export const field = 'mt-1 w-full rounded-md border border-cx-border bg-cx-input px-3 outline-none focus:border-cx-blue'
+export const useFriends = () => {
   const me = useSelector((s) => s.user)
   const [friends, setFriends] = useState(null)
   const load = useCallback(async () => {
@@ -39,18 +40,18 @@ const useFriends = () => {
   }, [friends, me._id])
   return { friends, load }
 }
-const PostList = ({ paged, empty, inGroup }) => {
+export const PostList = ({ paged, empty, inGroup, removeOnUnsave = false }) => {
   const more = useOnVisible(paged.loadMore, !paged.done && !paged.loading)
   return (
     <>
-      {paged.items.map((p) => <CxPostCard key={p._id} post={p} inGroup={inGroup} onDeleted={(d) => paged.setItems((l) => l.filter((x) => x._id !== d._id))} onHidden={(d) => paged.setItems((l) => l.filter((x) => x._id !== d._id))} />)}
+      {paged.items.map((p) => <CxPostCard key={p._id} post={p} inGroup={inGroup} onDeleted={(d) => paged.setItems((l) => l.filter((x) => x._id !== d._id))} onHidden={removeHidden(paged.setItems)} onUnsaved={removeOnUnsave ? (d) => paged.setItems((l) => l.filter((x) => x._id !== d._id)) : undefined} />)}
       {paged.loading && <Spinner />}
       {!paged.loading && !paged.items.length && <Card className='p-8 text-center text-cx-muted'>{empty}</Card>}
       <div ref={more} />
     </>
   )
 }
-const CoverPicker = ({ value, onChange, label = 'Add cover photo' }) => {
+export const CoverPicker = ({ value, onChange, label = 'Add cover photo' }) => {
   const input = useRef(null)
   const [busy, setBusy] = useState(false)
   const pick = async (f) => {
@@ -144,7 +145,7 @@ export const ConnectifyGroup = () => {
   const navigate = useNavigate()
   const { openComposer, version } = useConnectify()
   const [group, setGroup] = useState(undefined)
-  const [tab, setTab] = useState('discussion')
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get('tab') || 'discussion')
   const [members, setMembers] = useState(null)
   const [requests, setRequests] = useState(null)
   const [editing, setEditing] = useState(false)
@@ -578,8 +579,15 @@ export const ConnectifyMemories = () => {
 
 export const ConnectifySaved = () => {
   const paged = usePaged('/saved?app=connectify')
-  return <Page title='Saved'><PostList paged={paged} empty='Save posts from the ••• menu to find them here. Only you can see what you save.' /></Page>
+  return <Page title='Saved'><PostList paged={paged} removeOnUnsave empty='Save posts from the ••• menu to find them here. Only you can see what you save.' /></Page>
 }
+
+export const ConnectifyScheduled = () => (
+  <Page title='Scheduled posts'>
+    <p className='mb-3 px-3 text-cx-muted sm:px-0'>Only you can see these until they're published.</p>
+    <Card className='overflow-hidden'><ScheduledList app='connectify' tone='cx' /></Card>
+  </Page>
+)
 
 export const ConnectifyTag = () => {
   const { tag } = useParams()
@@ -649,11 +657,13 @@ export const ConnectifyPokes = () => {
 export const SHORTCUTS = [
   { path : '/connectify/friends', label : 'Friends', Icon : IoPeople, color : 'text-cx-blue' },
   { path : '/connectify/groups', label : 'Groups', Icon : IoPeople, color : 'text-[#1b74e4]' },
+  { path : '/connectify/pages', label : 'Pages', Icon : IoFlag, color : 'text-[#f7923b]' },
   { path : '/connectify/marketplace', label : 'Marketplace', Icon : IoStorefront, color : 'text-[#0a7cff]' },
   { path : '/connectify/watch', label : 'Watch', Icon : IoPlayCircle, color : 'text-[#0a7cff]' },
   { path : '/connectify/events', label : 'Events', Icon : IoCalendar, color : 'text-[#e41e3f]' },
   { path : '/connectify/memories', label : 'Memories', Icon : IoTime, color : 'text-cx-blue' },
   { path : '/connectify/saved', label : 'Saved', Icon : IoBookmark, color : 'text-[#c03fd6]' },
+  { path : '/connectify/scheduled', label : 'Scheduled posts', Icon : IoTime, color : 'text-[#0a7cff]' },
   { path : '/connectify/birthdays', label : 'Birthdays', Icon : IoGift, color : 'text-[#e41e3f]' },
   { path : '/connectify/pokes', label : 'Pokes', Icon : IoHandLeft, color : 'text-[#f7b928]' },
   { path : '/connectify/search', label : 'Search', Icon : IoSearchOutline, color : 'text-cx-blue' },

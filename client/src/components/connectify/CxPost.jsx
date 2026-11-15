@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate } from 'react-router-dom'
-import { IoEllipsisHorizontal, IoChatbubbleOutline, IoShareSocialOutline, IoPaperPlaneOutline, IoThumbsUpOutline, IoSend, IoCaretForward, IoPeople } from 'react-icons/io5'
+import { IoEllipsisHorizontal, IoChatbubbleOutline, IoShareSocialOutline, IoPaperPlaneOutline, IoThumbsUpOutline, IoSend, IoCaretForward, IoPeople, IoCheckmark } from 'react-icons/io5'
 import { BsPinAngleFill } from 'react-icons/bs'
 import Avatar from '../Avatar'
 import { api, longAgo, compact } from '../../helpers/social'
@@ -12,20 +12,77 @@ import { useConnectify, Card } from './ConnectifyLayout'
 import { audienceOf, AUDIENCES } from './Composer'
 import { ReportSheet } from '../social/extras'
 import YouTubeVideo from '../social/YouTubeVideo'
-import { IoLogoYoutube } from 'react-icons/io5'
+import { IoLogoYoutube, IoFlag } from 'react-icons/io5'
 
 const userLink = (p) => `/connectify/u/${p.username || p._id}`
+export const pageLink = (p) => `/connectify/pages/${p._id}`
+
+// a Connectify Page's round picture (a flag when it has none)
+export const PageAvatar = ({ page, size = 40, className = '' }) => (
+  <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-cx-input ${className}`} style={{ width : size, height : size }}>
+    {page.avatar ? <img src={page.avatar} alt='' className='h-full w-full object-cover' /> : <IoFlag size={Math.round(size * 0.45)} className='text-cx-muted' />}
+  </span>
+)
+// who a post shows as: the Page for Page posts, otherwise the person
+const byline = (post) => (post.page ? { name : post.page.name, to : pageLink(post.page), avatar : (size) => <PageAvatar page={post.page} size={size} /> } : { name : post.author.name, to : userLink(post.author), avatar : (size) => <Avatar width={size} height={size} name={post.author.name} imageUrl={post.author.profile_pic} /> })
+
+// Facebook-style poll: tap an option to vote (again to take it back); bars show the share of votes
+const PollCard = ({ post, onChange }) => {
+  const [busy, setBusy] = useState(false)
+  const [voters, setVoters] = useState(null)
+  const { poll } = post
+  const vote = async (i) => {
+    if (busy) return
+    const mine = poll.options.map((o, j) => (o.voted ? j : -1)).filter((j) => j >= 0)
+    const next = poll.multiple ? (mine.includes(i) ? mine.filter((j) => j !== i) : [...mine, i]) : (mine.includes(i) ? [] : [i])
+    setBusy(true)
+    try { const r = await api.post(`/posts/${post._id}/poll`, { options : next }); onChange(r.post) } catch (e) { notifyError(e.message) }
+    setBusy(false)
+  }
+  const top = Math.max(1, ...poll.options.map((o) => o.count))
+  return (
+    <div className='mx-4 mb-3 space-y-2'>
+      {poll.options.map((o, i) => {
+        const pct = poll.total ? Math.round((o.count / poll.total) * 100) : 0
+        return (
+          <button key={i} onClick={() => vote(i)} disabled={busy} aria-pressed={o.voted}
+            className={`relative flex h-11 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 text-left text-[15px] ${o.voted ? 'border-cx-blue' : 'border-cx-border hover:bg-cx-hover'}`}>
+            <span className={`absolute inset-y-0 left-0 ${o.count === top && o.count ? 'bg-cx-blue/20' : 'bg-cx-input'}`} style={{ width : `${pct}%` }} />
+            <span className={`relative flex h-5 w-5 shrink-0 items-center justify-center ${poll.multiple ? 'rounded' : 'rounded-full'} border-2 ${o.voted ? 'border-cx-blue bg-cx-blue text-white' : 'border-cx-muted'}`}>{o.voted && <IoCheckmark size={13} />}</span>
+            <span className='relative min-w-0 flex-1 truncate font-semibold'>{o.text}</span>
+            {poll.total > 0 && <span className='relative shrink-0 text-sm text-cx-muted'>{pct}%</span>}
+          </button>
+        )
+      })}
+      <p className='text-sm text-cx-muted'>
+        {poll.total ? <button onClick={() => { setVoters(null); api.get(`/posts/${post._id}/poll/voters`).then((r) => setVoters(r.options)).catch(() => setVoters([])) ; setVoters('loading') }} className='hover:underline'>{compact(poll.total)} {poll.total === 1 ? 'vote' : 'votes'}</button> : 'No votes yet'}
+        {poll.multiple && ' · You can choose more than one'}
+      </p>
+      {voters && voters !== 'loading' && (
+        <Modal onClose={() => setVoters(null)} label='Poll votes' className='max-h-[80vh] w-[min(420px,94vw)] overflow-y-auto rounded-lg bg-cx-card p-4 text-cx-text'>
+          <p className='mb-3 text-lg font-bold'>Votes</p>
+          {voters.map((o, i) => (
+            <div key={i} className='mb-3'>
+              <p className='font-semibold'>{o.text} <span className='font-normal text-cx-muted'>· {o.people.length}</span></p>
+              {o.people.map((p) => <Link key={p._id} to={userLink(p)} className='mt-1 flex items-center gap-2 text-[15px] hover:underline'><Avatar width={28} height={28} name={p.name} imageUrl={p.profile_pic} />{p.name}</Link>)}
+            </div>
+          ))}
+        </Modal>
+      )}
+    </div>
+  )
+}
 
 // 1 photo: full width; 2: side by side; 3+: one big + grid, "+N" on the last tile
 const MediaGrid = ({ media, onOpen }) => {
   const n = media.length
   const tile = (m, i, cls) => (
-    <button key={i} onClick={() => onOpen(i)} className={`relative overflow-hidden bg-black ${cls}`}>
+    <div key={i} role='button' tabIndex={0} onClick={() => onOpen(i)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(i) }} className={`relative cursor-pointer overflow-hidden bg-black ${cls}`}>
       {m.kind === 'video'
         ? (m.youtube ? <YouTubeVideo id={m.youtube} poster={m.poster} className='h-full w-full' /> : <AutoVideo src={m.url} className='h-full w-full' fit='object-cover' onClick={() => onOpen(i)} />)
         : <img src={thumbUrl(m.url, n === 1 ? 1080 : 600)} alt='' loading='lazy' className='h-full w-full object-cover' />}
       {i === 4 && n > 5 && <span className='absolute inset-0 flex items-center justify-center bg-black/50 text-3xl font-bold text-white'>+{n - 5}</span>}
-    </button>
+    </div>
   )
   if (n === 1) {
     const m = media[0]
@@ -56,9 +113,9 @@ export const SharedPreview = ({ post, onOpenMedia }) => {
     <div className='overflow-hidden rounded-lg border border-cx-border'>
       {post.media?.length > 0 && <MediaGrid media={post.media} onOpen={(i) => onOpenMedia?.(post, i)} />}
       <div className='flex items-center gap-2 px-4 pt-3'>
-        <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
+        <Link to={byline(post).to}>{byline(post).avatar(32)}</Link>
         <div className='text-sm'>
-          <Link to={userLink(post.author)} className='font-semibold hover:underline'>{post.author.name}</Link>
+          <Link to={byline(post).to} className='font-semibold hover:underline'>{byline(post).name}</Link>
           <p className='text-xs text-cx-muted'>{longAgo(post.createdAt)}</p>
         </div>
       </div>
@@ -190,8 +247,11 @@ const Comments = ({ post, onCount, autoFocus }) => {
 
 /* ---------- the post ---------- */
 
-// onHidden: the post should leave the list (hidden, snoozed, unfollowed)
-export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = false, inGroup = false }) => {
+// a list's handler for CxPostCard's onHidden: "Hide post" removes the post, Snooze / Unfollow every post by that person
+export const removeHidden = (setItems) => (post, scope) => setItems((list) => list.filter((x) => (scope === 'author' ? x.author?._id !== post.author?._id : x._id !== post._id)))
+
+// onHidden: the post should leave the list (hidden, snoozed, unfollowed); onUnsaved: it was unsaved (Saved page)
+export const CxPostCard = ({ post : initial, onDeleted, onHidden, onUnsaved, expanded = false, inGroup = false }) => {
   const navigate = useNavigate()
   const { sendToChat, sendInMessages, openComposer } = useConnectify()
   const [post, setPost] = useState(initial)
@@ -207,8 +267,9 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
   const [viewer, setViewer] = useState(null) // { media, index }
   const [reporting, setReporting] = useState(false)
   const first = post.author.name.split(' ')[0]
+  const asPage = !!post.page
   const tool = async (url, body, okText, hide) => {
-    try { const r = await api.post(url, body); if (r.post) setPost((p) => ({ ...p, ...r.post })); if (okText) notify(okText); if (hide) onHidden?.(post); return r } catch (e) { notifyError(e.message) }
+    try { const r = await api.post(url, body); if (r.post) setPost((p) => ({ ...p, ...r.post })); if (okText) notify(okText); if (hide) onHidden?.(post, url.includes('/hide') ? 'post' : 'author'); return r } catch (e) { notifyError(e.message) }
   }
 
   const react = async (type) => {
@@ -232,12 +293,12 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       <header className='flex items-start gap-2 px-4 pb-3 pt-3'>
         {post.external
           ? <a href={post.external.byUrl || post.external.link} target='_blank' rel='noopener noreferrer' className='flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ff0000] text-white'><IoLogoYoutube size={22} /></a>
-          : <Link to={userLink(post.author)}><Avatar width={40} height={40} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>}
+          : <Link to={byline(post).to}>{byline(post).avatar(40)}</Link>}
         <div className='min-w-0 flex-1'>
           <p className='text-[15px] leading-5'>
             {post.external
               ? <><a href={post.external.byUrl || post.external.link} target='_blank' rel='noopener noreferrer' className='font-semibold hover:underline'>{post.external.by}</a><span className='ml-1.5 rounded border border-cx-border px-1.5 text-xs font-semibold text-cx-muted'>YouTube</span></>
-              : <Link to={userLink(post.author)} className='font-semibold hover:underline'>{post.author.name}</Link>}
+              : <Link to={byline(post).to} className='font-semibold hover:underline'>{byline(post).name}</Link>}
             {post.group && !inGroup && <><IoCaretForward size={12} className='mx-0.5 inline text-cx-muted' /><Link to={`/connectify/groups/${post.group._id}`} className='font-semibold hover:underline'>{post.group.name}</Link></>}
             {post.sharedPost && <span className='text-cx-muted'> shared a post</span>}
             {post.feeling && <span> is {post.feeling.split(' ')[0]} <b>{post.feeling.split(' ').slice(1).join(' ')}</b></span>}
@@ -253,6 +314,7 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       </header>
 
       <TextBody post={post} big />
+      {post.poll && <PollCard post={post} onChange={(p) => setPost((x) => ({ ...x, ...p }))} />}
       {post.media?.length > 0 && <MediaGrid media={post.media} onOpen={(index) => setViewer({ media : post.media, index })} />}
       {post.sharedPost && <div className='px-4 pb-1'><SharedPreview post={post.sharedPost} onOpenMedia={(p, index) => setViewer({ media : p.media, index })} /></div>}
 
@@ -284,16 +346,18 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
 
       {menu && (
         <ActionSheet tone='cx' onClose={() => setMenu(false)} items={[
-          { label : post.saved ? 'Unsave post' : 'Save post', onClick : async () => { const r = await tool(`/posts/${post._id}/save`, { save : !post.saved }, post.saved ? 'Removed from saved' : 'Saved'); if (r) setPost((p) => ({ ...p, saved : r.saved })) } },
-          { label : post.pinned ? 'Unpin post' : 'Pin post', hidden : !post.mine || !!post.group, onClick : () => tool(`/posts/${post._id}/pin`, { pin : !post.pinned }, post.pinned ? 'Unpinned' : 'Pinned to your profile') },
+          { label : post.saved ? 'Unsave post' : 'Save post', onClick : async () => { const r = await tool(`/posts/${post._id}/save`, { save : !post.saved }, post.saved ? 'Removed from saved' : 'Saved'); if (r) { setPost((p) => ({ ...p, saved : r.saved })); if (!r.saved) onUnsaved?.(post) } } },
+          { label : post.pinned ? 'Unpin post' : 'Pin post', hidden : !post.mine || !!post.group || asPage, onClick : () => tool(`/posts/${post._id}/pin`, { pin : !post.pinned }, post.pinned ? 'Unpinned' : 'Pinned to your profile') },
           { label : 'Edit post', hidden : !post.mine, onClick : () => setEditing(true) },
-          { label : 'Edit audience', hidden : !post.mine || !!post.group, onClick : () => setAudienceMenu(true) },
+          { label : 'Edit audience', hidden : !post.mine || !!post.group || asPage, onClick : () => setAudienceMenu(true) },
           { label : post.commentsOff ? 'Turn on commenting' : 'Turn off commenting', hidden : !post.mine, onClick : () => update({ commentsOff : !post.commentsOff }) },
           { label : 'Open post', hidden : expanded, onClick : () => navigate(`/connectify/p/${post._id}`) },
           { label : 'Copy link', onClick : () => copyPostLink(post) },
           { label : 'Hide post', hidden : post.mine, onClick : () => tool(`/posts/${post._id}/hide`, { hide : true }, 'Post hidden. You\'ll see fewer posts like this.', true) },
-          { label : `Snooze ${first} for 30 days`, hidden : post.mine || !!post.external, onClick : () => tool(`/cx/snooze/${post.author._id}`, { snooze : true }, `You won't see posts from ${first} for 30 days`, true) },
-          { label : `Unfollow ${first}`, hidden : post.mine || !!post.external, onClick : () => tool(`/cx/unfollow/${post.author._id}`, { unfollow : true }, `You'll stay friends with ${first} but won't see their posts`, true) },
+          { label : 'Go to Page', hidden : !asPage, onClick : () => navigate(pageLink(post.page)) },
+          { label : `Unfollow ${post.page?.name}`, hidden : !asPage || post.mine, onClick : async () => { try { await api.post(`/pages/${post.page._id}/follow`, { follow : false }); notify(`You unfollowed ${post.page.name}`); onHidden?.(post, 'post') } catch (e) { notifyError(e.message) } } },
+          { label : `Snooze ${first} for 30 days`, hidden : post.mine || !!post.external || asPage, onClick : () => tool(`/cx/snooze/${post.author._id}`, { snooze : true }, `You won't see posts from ${first} for 30 days`, true) },
+          { label : `Unfollow ${first}`, hidden : post.mine || !!post.external || asPage, onClick : () => tool(`/cx/unfollow/${post.author._id}`, { unfollow : true }, `You'll stay friends with ${first} but won't see their posts`, true) },
           { label : 'Remove post from group', danger : true, hidden : !post.canModerate || post.mine, onClick : async () => { try { await api.del(`/groups/${post.group._id}/posts/${post._id}`); notify('Post removed'); onDeleted?.(post) } catch (e) { notifyError(e.message) } } },
           { label : 'Watch on YouTube', hidden : !post.external, onClick : () => window.open(post.external.link, '_blank', 'noopener') },
           { label : 'Report post', danger : true, hidden : post.mine || !!post.external, onClick : () => setReporting(true) },
@@ -303,7 +367,7 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       {confirmDelete && <ActionSheet tone='cx' title='Delete this post? You can’t undo this.' onClose={() => setConfirmDelete(false)} items={[{ label : 'Delete', danger : true, onClick : remove }]} />}
       {audienceMenu && (
         <ActionSheet tone='cx' title='Who can see this post?' onClose={() => setAudienceMenu(false)}
-          items={AUDIENCES.map((a) => ({ label : `${a.label}${post.audience === a.id ? ' ✓' : ''}`, bold : post.audience === a.id, onClick : () => update({ audience : a.id }) }))} />
+          items={AUDIENCES.filter((a) => !a.list || post.audience === a.id).map((a) => ({ label : `${a.label}${post.audience === a.id ? ' ✓' : ''}`, bold : post.audience === a.id, onClick : () => (post.audience === a.id ? null : update({ audience : a.id })) }))} />
       )}
       {shareMenu && (
         <ActionSheet tone='cx' title='Share' onClose={() => setShareMenu(false)} items={[

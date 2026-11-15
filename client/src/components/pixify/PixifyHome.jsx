@@ -7,13 +7,13 @@ import useStories from '../apps/useStories'
 import { StoryPreview, useStoryViewer, usePersonLabel } from '../apps/stories'
 import { api, usePaged, useOnVisible } from '../../helpers/social'
 import { notifyError } from '../../helpers/toast'
-import { MediaThumb } from '../social/common'
+import { MediaThumb, ActionSheet } from '../social/common'
 import { usePixify } from './PixifyLayout'
 import { PostCard } from './Post'
 
-// story ring: warm gradient when there's something new, grey when everything was seen
-export const Ring = ({ seen, size = 66, children }) => (
-  <span className={`flex shrink-0 items-center justify-center rounded-full p-[2.5px] ${seen ? 'bg-px-border' : 'bg-gradient-to-tr from-[#ffb03a] via-[#ff3d77] to-[#a33ffc]'}`} style={{ width : size, height : size }}>
+// story ring: warm gradient when there's something new, green for a Close friends story, grey when everything was seen
+export const Ring = ({ seen, close = false, size = 66, children }) => (
+  <span className={`flex shrink-0 items-center justify-center rounded-full p-[2.5px] ${close ? 'bg-[#1fbf4a]' : seen ? 'bg-px-border' : 'bg-gradient-to-tr from-[#ffb03a] via-[#ff3d77] to-[#a33ffc]'}`} style={{ width : size, height : size }}>
     <span className='flex h-full w-full items-center justify-center overflow-hidden rounded-full border-[2.5px] border-px-bg bg-px-bg'>{children}</span>
   </span>
 )
@@ -22,9 +22,11 @@ export const FollowButton = ({ person, initial = null, size = 'sm', onChange }) 
   const [status, setStatus] = useState(initial)
   const [busy, setBusy] = useState(false)
   useEffect(() => setStatus(initial), [initial])
-  const toggle = async (e) => {
+  const [confirm, setConfirm] = useState(false)
+  const toggle = async (e, sure = false) => {
     e?.stopPropagation()
     if (busy) return
+    if (status === 'active' && person.private && !sure) return setConfirm(true)
     setBusy(true)
     try {
       const r = await api.post(`/follow/${person._id}`, { follow : !status })
@@ -33,13 +35,17 @@ export const FollowButton = ({ person, initial = null, size = 'sm', onChange }) 
     } catch (err) { notifyError(err.message) }
     setBusy(false)
   }
+  const sheet = confirm && (
+    <ActionSheet title={`Unfollow ${person.username || person.name}?`} onClose={() => setConfirm(false)}
+      items={[{ label : "Unfollow (you'll need to request again)", danger : true, onClick : () => toggle(null, true) }]} />
+  )
   if (size === 'link') {
-    return <button onClick={toggle} disabled={busy} className={`text-xs font-semibold ${status ? 'text-px-text' : 'text-px-blue hover:text-px-text'}`}>{status === 'active' ? 'Following' : status === 'pending' ? 'Requested' : 'Follow'}</button>
+    return <>{sheet}<button onClick={toggle} disabled={busy} className={`text-xs font-semibold ${status ? 'text-px-text' : 'text-px-blue hover:text-px-text'}`}>{status === 'active' ? 'Following' : status === 'pending' ? 'Requested' : 'Follow'}</button></>
   }
   return (
-    <button onClick={toggle} disabled={busy} className={`h-8 rounded-lg px-4 text-sm font-semibold transition disabled:opacity-60 ${status ? 'bg-px-raised text-px-text hover:bg-px-border' : 'bg-px-blue text-white hover:brightness-95'}`}>
+    <>{sheet}<button onClick={toggle} disabled={busy} className={`h-8 rounded-lg px-4 text-sm font-semibold transition disabled:opacity-60 ${status ? 'bg-px-raised text-px-text hover:bg-px-border' : 'bg-px-blue text-white hover:brightness-95'}`}>
       {status === 'active' ? 'Following' : status === 'pending' ? 'Requested' : 'Follow'}
-    </button>
+    </button></>
   )
 }
 
@@ -57,7 +63,7 @@ const StoriesBar = () => {
       <button onClick={() => (mine.length ? viewer.open([{ user : me, statuses : mine }], 0, { mine : true }) : openStory())} className='flex w-[66px] shrink-0 flex-col items-center gap-1.5' title={mine.length ? 'View your story' : 'Add to your story'}>
         <span className='relative'>
           {mine.length
-            ? <Ring seen><StoryPreview status={mine[mine.length - 1]} className='h-full w-full rounded-full' /></Ring>
+            ? <Ring seen close={mine.some((s) => s.closeFriends)}><StoryPreview status={mine[mine.length - 1]} className='h-full w-full rounded-full' /></Ring>
             : <span className='flex h-[66px] w-[66px] items-center justify-center'><Avatar width={58} height={58} name={user.name} imageUrl={user.profile_pic} /></span>}
           <span onClick={(e) => { e.stopPropagation(); openStory() }} role='button' aria-label='Add to your story'
             className='absolute -bottom-0.5 -right-0.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-px-bg bg-px-blue text-white'><IoAdd size={15} /></span>
@@ -71,7 +77,7 @@ const StoriesBar = () => {
       ))}
       {ordered.map((g, i) => (
         <button key={g.user._id} onClick={() => viewer.open(ordered, i)} className={`flex w-[66px] shrink-0 flex-col items-center gap-1.5 ${g.muted ? 'opacity-50' : ''}`} title={label(g.user)}>
-          <Ring seen={g.allViewed}><Avatar width={56} height={56} name={g.user.name} imageUrl={g.user.profile_pic} /></Ring>
+          <Ring seen={g.allViewed} close={g.statuses.some((s) => s.closeFriends && !s.viewed)}><Avatar width={56} height={56} name={g.user.name} imageUrl={g.user.profile_pic} /></Ring>
           <span className={`w-full truncate text-center text-xs ${g.allViewed ? 'text-px-muted' : ''}`}>{label(g.user)}</span>
         </button>
       ))}
@@ -116,7 +122,7 @@ const PixifyHome = () => {
           <p className='px-6 py-12 text-center text-sm text-px-muted'>Add people to Favorites from the ••• menu on their posts or profile. Their posts show here.</p>
         )}
         <div className='mt-2'>
-          {feed.items.map((p) => <PostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id))} onHidden={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id && (d.author._id !== x.author._id || x.mine)))} />)}
+          {feed.items.map((p) => <PostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id))} onHidden={(d, scope) => feed.setItems((list) => list.filter((x) => x._id !== d._id && (scope !== 'author' || d.author._id !== x.author._id || x.mine)))} />)}
         </div>
         {feed.loading && [0, 1].map((i) => (
           <div key={i} className='mb-6 px-3 sm:px-0'>

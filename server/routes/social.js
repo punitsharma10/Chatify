@@ -25,6 +25,18 @@ router.post('/posts/:id/archive', P.archivePost)    // Pixify archive
 router.post('/posts/:id/view', P.viewPost)          // Reel plays
 router.post('/posts/:id/hide', P.hidePost)          // Connectify hide / Pixify not interested
 router.post('/comments/:id/pin', P.pinComment)
+
+// collab posts, insights, polls, scheduled posts, places, hidden words
+const X = require('../controllers/postExtras.controller')
+router.post('/posts/:id/collab', X.answerCollab)          // { accept } or { leave }
+router.get('/posts/:id/insights', X.insights)             // author only
+router.post('/posts/:id/poll', X.votePoll)                // { options: [i] }
+router.get('/posts/:id/poll/voters', X.pollVoters)
+router.post('/posts/:id/publish', X.reschedule)           // publish now, or { at } to move it
+router.get('/scheduled', X.scheduledList)                 // ?app=
+router.get('/places/:name', X.place)                      // ?app=pixify
+router.get('/hidden-words', X.hiddenWords)
+router.post('/hidden-words', X.hiddenWords)
 router.post('/report', P.report)
 router.get('/report/reasons', P.reportReasons)
 
@@ -82,6 +94,20 @@ router.patch('/market/:id', C.updateListing)
 router.delete('/market/:id', C.deleteListing)
 router.post('/market/:id/save', C.saveListing)
 
+// Connectify Pages (posting as a Page: POST /posts { app: 'connectify', page })
+const PG = require('../controllers/pages.controller')
+router.get('/pages', PG.listPages)                  // ?tab=yours|followed|discover&q=
+router.get('/pages/categories', PG.categories)
+router.post('/pages', PG.createPage)
+router.get('/pages/:id', PG.getPage)
+router.patch('/pages/:id', PG.updatePage)
+router.delete('/pages/:id', PG.deletePage)
+router.post('/pages/:id/follow', PG.followPage)     // { follow }
+router.get('/pages/:id/posts', PG.pagePosts)
+router.get('/pages/:id/admins', PG.listAdmins)
+router.post('/pages/:id/admins', PG.addAdmin)       // { userId } (a friend)
+router.delete('/pages/:id/admins/:userId', PG.removeAdmin)
+
 // people
 router.get('/search', U.search)           // ?app=&q=
 router.post('/profile', U.updateProfile)
@@ -133,5 +159,16 @@ router.post('/dm/messages/:id/react', D.react)
 router.get('/notifications', U.notifications)   // ?app=
 router.get('/notifications/unread', U.unread)
 router.post('/notifications/read', U.markRead)
+
+// Pixify story archive, highlights and Close friends
+const H = require('../controllers/highlights.controller')
+router.get('/stories/archive', H.archive)           // ?before=  (only my own)
+router.delete('/stories/archive/:id', H.deleteArchived)
+router.get('/users/:id/highlights', H.userHighlights)
+router.post('/highlights', H.createHighlight)       // { title, items }
+router.patch('/highlights/:id', H.updateHighlight)  // { title?, items? }
+router.delete('/highlights/:id', H.deleteHighlight)
+router.get('/close-friends', H.closeFriends)        // ?q=
+router.post('/close-friends/:id', H.setCloseFriend) // { add }
 
 module.exports = router

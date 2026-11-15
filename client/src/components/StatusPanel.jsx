@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import moment from 'moment'
-import { IoAdd, IoClose, IoEyeOutline, IoText, IoImages, IoTrashOutline, IoChevronBack, IoChevronForward, IoPause, IoPlay, IoColorPaletteOutline, IoVolumeMuteOutline, IoVolumeHighOutline } from 'react-icons/io5'
+import { IoAdd, IoClose, IoEyeOutline, IoText, IoImages, IoTrashOutline, IoChevronBack, IoChevronForward, IoPause, IoPlay, IoColorPaletteOutline, IoVolumeMuteOutline, IoVolumeHighOutline, IoStar } from 'react-icons/io5'
 import { IoMdSend } from 'react-icons/io'
 import { HiDotsVertical } from 'react-icons/hi'
 import Drawer from './Drawer'
@@ -18,9 +18,9 @@ import { APPS, appName, isSharedOutsideChats } from '../helpers/apps'
 import { AppMark } from './apps/AppLogos'
 
 // "Status posted" / "Shared to Chats, Pixify and Connectify"
-const postedLabel = (apps) => (apps.length === 1 && apps[0] === 'chats'
+const postedLabel = (apps, closeFriends = false) => (apps.length === 1 && apps[0] === 'chats'
   ? 'Status posted'
-  : `Shared to ${apps.map(appName).join(', ').replace(/, ([^,]*)$/, ' and $1')}`)
+  : `Shared to ${apps.map((a) => (a === 'pixify' && closeFriends ? 'Pixify (Close friends)' : appName(a))).join(', ').replace(/, ([^,]*)$/, ' and $1')}`)
 
 export const STATUS_BACKGROUNDS = ['#00a884', '#5796ff', '#7e57c2', '#ff8a65', '#e53935', '#c0ca33', '#26a69a', '#8d6e63', '#54656f', '#ec407a']
 export const STATUS_FONTS = [
@@ -303,7 +303,7 @@ export const StatusViewer = ({ socket, list, group : startGroup, index : startIn
         <Avatar width={38} height={38} name={g.user.self ? 'You' : nameOf(g.user)} imageUrl={g.user.profile_pic} />
         <div className='min-w-0 flex-1'>
           <p className='truncate text-[15px]'>{g.user.self ? 'My status' : nameOf(g.user)}</p>
-          <p className='text-xs text-white/70'>{timeLabel(status.createdAt)}</p>
+          <p className='flex flex-wrap items-center gap-x-2 text-xs text-white/70'>{timeLabel(status.createdAt)}{status.closeFriends && <span className='inline-flex items-center gap-1 rounded-full bg-[#1fbf4a] px-2 py-0.5 text-[11px] font-semibold text-white'><IoStar size={10} />Close friends</span>}</p>
         </div>
         {status.kind === 'video' && (
           <button onClick={() => setMutedVideo((m) => !m)} className='flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10' title={mutedVideo ? 'Unmute' : 'Mute'}>
@@ -414,7 +414,8 @@ export const StatusViewer = ({ socket, list, group : startGroup, index : startIn
 /* ---------------- composers ---------------- */
 
 // "Share to: Chats · Pixify · Connectify". One story, shown in every app that's ticked (at least one).
-export const ShareToApps = ({ apps, onChange, disabled = false }) => {
+// closeFriends / onCloseFriends: the Pixify "Close friends only" switch (shown while Pixify is ticked)
+export const ShareToApps = ({ apps, onChange, disabled = false, closeFriends = false, onCloseFriends }) => {
   const toggle = (id) => {
     const next = apps.includes(id) ? apps.filter((a) => a !== id) : [...apps, id]
     if (next.length) onChange(APPS.map((a) => a.id).filter((a) => next.includes(a)))
@@ -435,6 +436,14 @@ export const ShareToApps = ({ apps, onChange, disabled = false }) => {
           )
         })}
       </div>
+      {onCloseFriends && apps.includes('pixify') && (
+        <button type='button' disabled={disabled} onClick={() => onCloseFriends(!closeFriends)} aria-pressed={closeFriends}
+          className={`flex h-8 items-center gap-1.5 rounded-full pl-1 pr-3 text-[13px] font-medium transition disabled:opacity-60 ${closeFriends ? 'bg-[#1fbf4a] text-white shadow' : 'bg-black/25 text-white/85 hover:bg-black/35'}`}
+          title='In Pixify, only your Close friends see this story'>
+          <span className={`flex h-6 w-6 items-center justify-center rounded-full ${closeFriends ? 'bg-white text-[#1fbf4a]' : 'bg-[#1fbf4a] text-white'}`}><IoStar size={13} /></span>
+          Close friends only{closeFriends ? ' ✓' : ''}
+        </button>
+      )}
       {isSharedOutsideChats(apps) && (
         <p className='max-w-md text-center text-[11.5px] leading-4 text-white/80'>
           🔓 Updates shared to {apps.filter((a) => a !== 'chats').map(appName).join(' and ')} aren't end-to-end encrypted.
@@ -450,14 +459,15 @@ export const TextComposer = ({ socket, onClose, onPosted, defaultApps = ['chats'
   const [font, setFont] = useState(0)
   const [sending, setSending] = useState(false)
   const [apps, setApps] = useState(defaultApps)
+  const [closeFriends, setCloseFriends] = useState(false)
 
   const post = async () => {
     if (!text.trim()) return
     setSending(true)
-    const res = await socketCall(socket, 'status-post', { kind : 'text', text, background : bg, font, apps })
+    const res = await socketCall(socket, 'status-post', { kind : 'text', text, background : bg, font, apps, ...(closeFriends && apps.includes('pixify') ? { closeFriends : true } : {}) })
     setSending(false)
     if (!res.ok) return notifyError(res.error)
-    notify(postedLabel(apps))
+    notify(postedLabel(apps, closeFriends && apps.includes('pixify')))
     onPosted?.()
     onClose()
   }
@@ -484,7 +494,7 @@ export const TextComposer = ({ socket, onClose, onPosted, defaultApps = ['chats'
           style={STATUS_FONTS[font]}
         />
       </div>
-      <div className='px-4 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={sending} /></div>
+      <div className='px-4 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={sending} closeFriends={closeFriends} onCloseFriends={setCloseFriends} /></div>
       <footer className='flex items-center justify-between px-4 pb-[max(1rem,env(safe-area-inset-bottom))]'>
         <span className='text-xs text-white/80'>{text.length}/700</span>
         <button onClick={post} disabled={!text.trim() || sending} className='flex h-14 w-14 items-center justify-center rounded-full bg-wa-green text-white shadow-menu disabled:opacity-60' title='Post status'><IoMdSend size={24} /></button>
@@ -497,6 +507,7 @@ export const MediaStatusComposer = ({ socket, item, onClose, onPosted, defaultAp
   const [caption, setCaption] = useState('')
   const [progress, setProgress] = useState(null)
   const [apps, setApps] = useState(defaultApps)
+  const [closeFriends, setCloseFriends] = useState(false)
 
   const post = async () => {
     setProgress(0)
@@ -504,9 +515,9 @@ export const MediaStatusComposer = ({ socket, item, onClose, onPosted, defaultAp
       // a photo shown in Pixify / Connectify is uploaded as-is; Chats-only updates are encrypted when everyone can decrypt
       const encrypt = isSharedOutsideChats(apps) ? false : await canEncryptStatus()
       const up = await uploadFile(item.file, { onProgress : setProgress, encrypt })
-      const res = await socketCall(socket, 'status-post', { kind : item.kind, mediaUrl : up.url, caption, apps })
+      const res = await socketCall(socket, 'status-post', { kind : item.kind, mediaUrl : up.url, caption, apps, ...(closeFriends && apps.includes('pixify') ? { closeFriends : true } : {}) })
       if (!res.ok) throw new Error(res.error)
-      notify(postedLabel(apps))
+      notify(postedLabel(apps, closeFriends && apps.includes('pixify')))
       onPosted?.()
       onClose()
     } catch (error) {
@@ -523,7 +534,7 @@ export const MediaStatusComposer = ({ socket, item, onClose, onPosted, defaultAp
       <div className='flex min-h-0 flex-1 items-center justify-center p-4'>
         {item.kind === 'image' ? <img src={item.url} alt='' className='max-h-full max-w-full rounded object-contain' /> : <video src={item.url} controls playsInline className='max-h-full max-w-full' />}
       </div>
-      <div className='px-3 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={progress !== null} /></div>
+      <div className='px-3 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={progress !== null} closeFriends={closeFriends} onCloseFriends={setCloseFriends} /></div>
       <footer className='mx-auto flex w-full max-w-xl items-center gap-2 px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'>
         <input value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={700} placeholder='Add a caption' className='h-12 min-w-0 flex-1 rounded-full bg-white/15 px-4 text-[15px] outline-none placeholder:text-white/60' onKeyDown={(e) => e.key === 'Enter' && progress === null && post()} />
         <button onClick={post} disabled={progress !== null} className='flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-wa-green text-sm text-white disabled:opacity-80' title='Post status'>

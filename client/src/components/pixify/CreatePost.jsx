@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { IoArrowBack, IoImagesOutline, IoClose, IoChevronBack, IoChevronForward, IoLocationOutline, IoPersonAddOutline, IoChevronForward as Chevron } from 'react-icons/io5'
+import { IoArrowBack, IoImagesOutline, IoClose, IoChevronBack, IoChevronForward, IoLocationOutline, IoPersonAddOutline, IoPeopleOutline, IoChevronForward as Chevron } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, uploadMedia, checkMediaFile } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
@@ -20,6 +20,9 @@ const Toggle = ({ on, onChange, label, hint, icon }) => (
   </label>
 )
 
+// value for <input type="datetime-local"> in local time
+export const localInput = (ms) => { const d = new Date(ms); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16) }
+
 // Pixify "Create new post": choose up to 10 photos / videos -> caption -> Share
 const CreatePost = ({ onClose, onPosted }) => {
   const user = useSelector((s) => s.user)
@@ -34,6 +37,12 @@ const CreatePost = ({ onClose, onPosted }) => {
   const [tagged, setTagged] = useState([])
   const [tagging, setTagging] = useState(false)
   const [filters, setFilters] = useState({}) // file url -> filter id
+  const [alts, setAlts] = useState({}) // file url -> alt text
+  const [collabs, setCollabs] = useState([])
+  const [inviting, setInviting] = useState(false)
+  const [scheduleOn, setScheduleOn] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState(() => localInput(Date.now() + 60 * 60 * 1000))
+  const [advanced, setAdvanced] = useState(false)
   const [progress, setProgress] = useState(null)
   const [dragging, setDragging] = useState(false)
   const input = useRef(null)
@@ -66,12 +75,14 @@ const CreatePost = ({ onClose, onPosted }) => {
     try {
       // bake the chosen filter into each photo before uploading
       const ready = await Promise.all(files.map((f) => (f.kind === 'image' ? applyFilter(f.file, filters[f.url]) : f.file)))
-      const media = await uploadMedia(ready, setProgress)
+      const media = (await uploadMedia(ready, setProgress)).map((m, i) => (alts[files[i].url]?.trim() ? { ...m, alt : alts[files[i].url].trim() } : m))
       const res = await api.post('/posts', {
         app : 'pixify', text : caption, media, commentsOff, hideLikes, location, tagged : tagged.map((p) => p._id),
+        ...(collabs.length ? { collaborators : collabs.map((p) => p._id) } : {}),
+        ...(scheduleOn ? { scheduledFor : new Date(scheduleAt).toISOString() } : {}),
         ...(alsoConnectify ? { crossPost : ['connectify'] } : {}),
       })
-      notify(res.crossPosted?.length ? 'Shared to Pixify and Connectify' : 'Your post has been shared')
+      notify(scheduleOn ? `Scheduled for ${new Date(scheduleAt).toLocaleString([], { dateStyle : 'medium', timeStyle : 'short' })}` : res.crossPosted?.length ? 'Shared to Pixify and Connectify' : 'Your post has been shared')
       onPosted(res.post)
     } catch (e) {
       setProgress(null)
@@ -80,6 +91,7 @@ const CreatePost = ({ onClose, onPosted }) => {
   }
 
   const close = () => { if (progress === null) onClose() }
+  const scheduleOk = new Date(scheduleAt).getTime() > Date.now() + 5 * 60 * 1000 - 30000 && new Date(scheduleAt).getTime() < Date.now() + 75 * 24 * 3600 * 1000
   const cur = files[index]
 
   return (
@@ -90,7 +102,7 @@ const CreatePost = ({ onClose, onPosted }) => {
           : <button onClick={close} title='Close' className='p-1 sm:invisible'><IoClose size={26} /></button>}
         <h2 className='font-semibold'>{step === 'details' ? 'New post' : 'Create new post'}</h2>
         {step === 'details'
-          ? <button onClick={share} disabled={progress !== null} className='px-1 text-sm font-semibold text-px-blue hover:text-px-text disabled:opacity-60'>{progress !== null ? `${progress}%` : 'Share'}</button>
+          ? <button onClick={share} disabled={progress !== null || (scheduleOn && !scheduleOk)} className='px-1 text-sm font-semibold text-px-blue hover:text-px-text disabled:opacity-60'>{progress !== null ? `${progress}%` : scheduleOn ? 'Schedule' : 'Share'}</button>
           : <span className='w-8' />}
       </header>
 
@@ -129,14 +141,14 @@ const CreatePost = ({ onClose, onPosted }) => {
             </div>
             {progress !== null && <div className='absolute inset-x-0 top-0 h-1 bg-white/20'><div className='h-full bg-px-blue transition-[width]' style={{ width : `${progress}%` }} /></div>}
           </div>
-          <div className='flex min-w-0 flex-1 flex-col border-px-border sm:border-l'>
+          <div className='flex min-h-0 min-w-0 flex-1 flex-col border-px-border sm:overflow-y-auto sm:border-l'>
             <div className='flex items-center gap-3 px-4 pt-4'>
               <Avatar width={28} height={28} name={user.name} imageUrl={user.profile_pic} />
               <span className='text-sm font-semibold'>{user.username}</span>
             </div>
             <textarea value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={2200} rows={6} autoFocus disabled={progress !== null}
               placeholder='Write a caption… Use @ to mention people and # for hashtags'
-              className='mx-4 mt-3 resize-none bg-transparent text-[15px] outline-none placeholder:text-px-muted' />
+              className='mx-4 mt-3 shrink-0 resize-none bg-transparent text-[15px] outline-none placeholder:text-px-muted' />
             <p className='px-4 text-right text-xs text-px-muted'>{caption.length.toLocaleString()}/2,200</p>
             {/* Filters (photos) */}
             {cur.kind === 'image' && (
@@ -163,6 +175,34 @@ const CreatePost = ({ onClose, onPosted }) => {
               <span className='min-w-0 flex-1 truncate'>{tagged.length ? `Tagged: ${tagged.map((p) => p.username || p.name).join(', ')}` : 'Tag people'}</span>
               <IoPersonAddOutline size={20} /><Chevron size={16} className='text-px-muted' />
             </button>
+            <button onClick={() => setInviting(true)} className='flex items-center gap-3 border-t border-px-border px-4 py-3 text-left text-[15px]'>
+              <span className='min-w-0 flex-1 truncate'>{collabs.length ? `Collaborators: ${collabs.map((p) => p.username || p.name).join(', ')}` : 'Invite collaborator'}</span>
+              <IoPeopleOutline size={20} /><Chevron size={16} className='text-px-muted' />
+            </button>
+            {/* Advanced: alt text + schedule */}
+            <button onClick={() => setAdvanced((v) => !v)} className='flex items-center gap-3 border-t border-px-border px-4 py-3 text-left text-[15px]' aria-expanded={advanced}>
+              <span className='min-w-0 flex-1'>Advanced settings</span><Chevron size={16} className={`text-px-muted transition-transform ${advanced ? 'rotate-90' : ''}`} />
+            </button>
+            {advanced && (
+              <div className='border-t border-px-border px-4 py-3'>
+                {cur.kind === 'image' && (
+                  <label className='block'>
+                    <span className='text-sm font-semibold'>Alt text</span>
+                    <span className='block text-xs text-px-muted'>Describes this photo for people with visual impairments.</span>
+                    <input value={alts[cur.url] || ''} onChange={(e) => setAlts((a) => ({ ...a, [cur.url] : e.target.value }))} maxLength={200} placeholder='Write alt text…' aria-label='Alt text'
+                      className='mt-2 h-10 w-full rounded-lg border border-px-border bg-transparent px-3 text-sm outline-none focus:border-px-muted' />
+                  </label>
+                )}
+                <Toggle on={scheduleOn} onChange={setScheduleOn} label='Schedule this post' hint='It will be shared automatically at the time you choose' />
+                {scheduleOn && (
+                  <>
+                    <input type='datetime-local' value={scheduleAt} min={localInput(Date.now() + 5 * 60 * 1000)} onChange={(e) => setScheduleAt(e.target.value)} aria-label='Publish at'
+                      className='h-10 w-full rounded-lg border border-px-border bg-transparent px-3 text-sm outline-none [color-scheme:light] dark:[color-scheme:dark]' />
+                    {!scheduleOk && <p className='mt-1 text-xs text-[#ed4956]'>Choose a time between 5 minutes and 75 days from now</p>}
+                  </>
+                )}
+              </div>
+            )}
             <div className='border-t border-px-border px-4'>
               <Toggle on={alsoConnectify} onChange={setAlsoConnectify} icon={<ConnectifyMark size={26} />} label='Also share to Connectify' hint='Your friends see it there too' />
               <Toggle on={hideLikes} onChange={setHideLikes} label='Hide like count on this post' hint='Only you will see the total number of likes' />
@@ -174,6 +214,7 @@ const CreatePost = ({ onClose, onPosted }) => {
 
       <input ref={input} type='file' accept='image/*,video/*' multiple className='hidden' onChange={(e) => { add(e.target.files || []); e.target.value = '' }} />
       {tagging && <PeoplePicker title='Tag people' app='pixify' initial={tagged} onClose={() => setTagging(false)} onDone={(list) => { setTagged(list); setTagging(false) }} />}
+      {inviting && <PeoplePicker title='Invite collaborators' app='pixify' initial={collabs} max={3} onClose={() => setInviting(false)} onDone={(list) => { setCollabs(list.slice(0, 3)); setInviting(false) }} />}
     </Modal>
   )
 }

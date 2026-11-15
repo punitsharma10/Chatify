@@ -59,7 +59,7 @@ export const PixifyExplore = () => {
             {p.views > 0 && <span className='absolute bottom-1.5 left-2 flex items-center gap-1 text-xs font-semibold text-white drop-shadow'><IoPlay size={12} />{compact(p.views)}</span>}
             <span className='absolute inset-0 hidden items-center justify-center gap-5 bg-black/35 font-bold text-white group-hover:flex'>
               {p.external ? <span className='px-2 text-xs font-semibold'>{p.external.by}</span> : <>
-                <span className='flex items-center gap-1'><IoHeart />{compact(p.reactionCount)}</span>
+                {!(p.hideLikes && !p.mine) && <span className='flex items-center gap-1'><IoHeart />{compact(p.reactionCount)}</span>}
                 {!p.commentsOff && <span className='flex items-center gap-1'><IoChatbubbleOutline className='-scale-x-100' />{compact(p.commentCount)}</span>}
               </>}
             </span>
@@ -112,7 +112,7 @@ export const PixifySearch = () => {
               <span className='font-semibold'>Recent</span>
               {recent.length > 0 && <button onClick={() => { removeRecentSearch('pixify'); setRecent([]) }} className='text-sm font-semibold text-px-blue'>Clear all</button>}
             </div>
-            {!recent.length && <p className='py-8 text-center text-sm text-px-muted'>No recent searches. Find people by name or @username, or hashtags with #.</p>}
+            {!recent.length && <p className='py-8 text-center text-sm text-px-muted max-md:hidden'>No recent searches. Find people by name or @username, or hashtags with #.</p>}
             {recent.map((it) => (
               <div key={it.id} className='flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-px-hover'>
                 <Link to={it.tag ? `/pixify/tags/${enc(it.tag)}` : `/pixify/u/${it.username}`} className='flex min-w-0 flex-1 items-center gap-3'>
@@ -127,6 +127,8 @@ export const PixifySearch = () => {
             ))}
           </div>
         )}
+        {/* phones: the Explore grid under the search box, like Instagram's Search tab */}
+        {people === null && <div className='-mx-4 mt-2 md:hidden'><PixifyExplore /></div>}
         {people?.length === 0 && !tags.length && <p className='py-8 text-center text-sm text-px-muted'>No results found.</p>}
         {tags.map((t) => (
           <Link key={t.tag} to={`/pixify/tags/${enc(t.tag)}`} onClick={() => remember({ id : '#' + t.tag, tag : t.tag })} className='flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-px-hover'>

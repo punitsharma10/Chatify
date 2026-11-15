@@ -104,8 +104,12 @@ const userSchema = new mongoose.Schema({
         favorites : { type : [{ type : mongoose.Schema.ObjectId, ref : 'User' }], default : undefined },
         // "Not interested" on Explore
         notInterested : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined },
+        // "Hidden words": comments on my posts containing these are hidden from everyone but their writer
+        hiddenWords : { type : [String], default : undefined },
         // Direct "Note": a short line shown above the inbox for 24 hours
-        note : { text : { type : String, maxlength : 60 }, at : Date }
+        note : { text : { type : String, maxlength : 60 }, at : Date },
+        // "Close friends": followers who see my close-friends-only stories (green ring), up to 500
+        closeFriends : { type : [{ type : mongoose.Schema.ObjectId, ref : 'User' }], default : undefined }
     },
     // Connectify profile
     connectify : {

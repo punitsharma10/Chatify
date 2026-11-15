@@ -155,7 +155,8 @@ export const applyFilter = (file, id) => new Promise((resolve) => {
 
 /* ---------- recent searches (this browser only) ---------- */
 
-const key = (app) => `chatify-recent-search-${app}`
+const accountId = () => { try { return JSON.parse(atob(localStorage.getItem('token').split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).id || '' } catch { return '' } }
+const key = (app) => `chatify-recent-search-${app}-${accountId()}`
 export const recentSearches = (app) => { try { return JSON.parse(localStorage.getItem(key(app)) || '[]') } catch { return [] } }
 export const addRecentSearch = (app, item) => {
   try {

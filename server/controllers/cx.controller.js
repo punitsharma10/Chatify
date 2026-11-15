@@ -311,6 +311,7 @@ const cleanEvent = (body, existing = {}) => {
         if (!existing._id && d < new Date(Date.now() - 3600 * 1000)) throw fail('The event must start in the future')
         out.startsAt = d
     }
+    if (body.endsAt === undefined && out.startsAt && existing.endsAt && new Date(existing.endsAt) <= out.startsAt) throw fail('The event must end after it starts')
     if (body.endsAt !== undefined) {
         if (!body.endsAt) out.endsAt = null
         else {
