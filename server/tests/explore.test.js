@@ -97,6 +97,20 @@ const fake = http.createServer((rq, rs) => {
   check("can't delete a Short", (await req('DELETE', '/posts/' + short._id, A.token)).status === 404)
   check('Shorts stay out of hashtag pages', !(await req('GET', '/hashtags/shorts?app=pixify', C.token)).body.posts.length)
 
+  // Connectify Watch: videos first, then YouTube Shorts (a separate Connectify copy with its own reactions)
+  const cxVid = (await req('POST', '/posts', A.token, { app: 'connectify', text: 'My clip', audience: 'public', media: [{ url: VID, kind: 'video' }] })).body.post
+  let w = await req('GET', '/watch', C.token)
+  const watchIds = [...w.body.posts.map((p) => p._id)]
+  let wn = w.body.next, guard = 0
+  while (wn && !String(wn).startsWith('x:') && guard++ < 50) { w = await req('GET', '/watch?before=' + encodeURIComponent(wn), C.token); watchIds.push(...w.body.posts.map((p) => p._id)); wn = w.body.next }
+  check('Watch shows videos first', watchIds.includes(cxVid._id))
+  check('then Watch continues with Shorts', wn === 'x:1')
+  const wx = (await req('GET', '/watch?before=x:1', C.token)).body
+  check('Watch Shorts are Connectify posts', wx.posts.length === 6 && wx.posts.every((p) => p.app === 'connectify' && p.media[0].youtube && p.external.source === 'YouTube') && wx.next === 'x:2')
+  check("Connectify's copy is separate from Pixify's", wx.posts[0].media[0].youtube === s1[0].media[0].youtube && wx.posts[0]._id !== s1[0]._id && wx.posts[0].reactionCount === 0)
+  check('react to a Short with Love', (await req('POST', `/posts/${wx.posts[0]._id}/react`, C.token, { type: 'love' })).body.myReaction === 'love')
+  check("Shorts don't appear in the Connectify news feed", !(await req('GET', '/feed?app=connectify', C.token)).body.posts.some((p) => p.external))
+
   const e1 = await req('GET', '/explore?before=x:1', C.token)
   check('Explore page of Shorts', e1.body.posts.length === 24 && e1.body.posts.every((p) => p.media[0].youtube) && e1.body.next === 'x:2')
   check("Explore doesn't open with the same Shorts as Reels", !s1.some((p) => p._id === e1.body.posts[0]._id))

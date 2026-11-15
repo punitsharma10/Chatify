@@ -11,6 +11,8 @@ import { thumbUrl } from '../../helpers/media'
 import { useConnectify, Card } from './ConnectifyLayout'
 import { audienceOf, AUDIENCES } from './Composer'
 import { ReportSheet } from '../social/extras'
+import YouTubeVideo from '../social/YouTubeVideo'
+import { IoLogoYoutube } from 'react-icons/io5'
 
 const userLink = (p) => `/connectify/u/${p.username || p._id}`
 
@@ -20,7 +22,7 @@ const MediaGrid = ({ media, onOpen }) => {
   const tile = (m, i, cls) => (
     <button key={i} onClick={() => onOpen(i)} className={`relative overflow-hidden bg-black ${cls}`}>
       {m.kind === 'video'
-        ? <AutoVideo src={m.url} className='h-full w-full' fit='object-cover' onClick={() => onOpen(i)} />
+        ? (m.youtube ? <YouTubeVideo id={m.youtube} poster={m.poster} className='h-full w-full' /> : <AutoVideo src={m.url} className='h-full w-full' fit='object-cover' onClick={() => onOpen(i)} />)
         : <img src={thumbUrl(m.url, n === 1 ? 1080 : 600)} alt='' loading='lazy' className='h-full w-full object-cover' />}
       {i === 4 && n > 5 && <span className='absolute inset-0 flex items-center justify-center bg-black/50 text-3xl font-bold text-white'>+{n - 5}</span>}
     </button>
@@ -222,16 +224,20 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
   }
   const openPeople = () => { setPeople(null); api.get(`/posts/${post._id}/reactions`).then((r) => setPeople(r.people)).catch(() => setPeople([])) }
   const A = audienceOf(post.audience)
-  const shareable = post.audience === 'public' && !(post.sharedPost?.unavailable)
+  const shareable = post.audience === 'public' && !(post.sharedPost?.unavailable) && !post.external
   const target = post.sharedPost && !post.sharedPost.unavailable ? post.sharedPost : post
 
   return (
     <Card className='mb-4 overflow-visible'>
       <header className='flex items-start gap-2 px-4 pb-3 pt-3'>
-        <Link to={userLink(post.author)}><Avatar width={40} height={40} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
+        {post.external
+          ? <a href={post.external.byUrl || post.external.link} target='_blank' rel='noopener noreferrer' className='flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ff0000] text-white'><IoLogoYoutube size={22} /></a>
+          : <Link to={userLink(post.author)}><Avatar width={40} height={40} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>}
         <div className='min-w-0 flex-1'>
           <p className='text-[15px] leading-5'>
-            <Link to={userLink(post.author)} className='font-semibold hover:underline'>{post.author.name}</Link>
+            {post.external
+              ? <><a href={post.external.byUrl || post.external.link} target='_blank' rel='noopener noreferrer' className='font-semibold hover:underline'>{post.external.by}</a><span className='ml-1.5 rounded border border-cx-border px-1.5 text-xs font-semibold text-cx-muted'>YouTube</span></>
+              : <Link to={userLink(post.author)} className='font-semibold hover:underline'>{post.author.name}</Link>}
             {post.group && !inGroup && <><IoCaretForward size={12} className='mx-0.5 inline text-cx-muted' /><Link to={`/connectify/groups/${post.group._id}`} className='font-semibold hover:underline'>{post.group.name}</Link></>}
             {post.sharedPost && <span className='text-cx-muted'> shared a post</span>}
             {post.feeling && <span> is {post.feeling.split(' ')[0]} <b>{post.feeling.split(' ').slice(1).join(' ')}</b></span>}
@@ -286,10 +292,11 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
           { label : 'Open post', hidden : expanded, onClick : () => navigate(`/connectify/p/${post._id}`) },
           { label : 'Copy link', onClick : () => copyPostLink(post) },
           { label : 'Hide post', hidden : post.mine, onClick : () => tool(`/posts/${post._id}/hide`, { hide : true }, 'Post hidden. You\'ll see fewer posts like this.', true) },
-          { label : `Snooze ${first} for 30 days`, hidden : post.mine, onClick : () => tool(`/cx/snooze/${post.author._id}`, { snooze : true }, `You won't see posts from ${first} for 30 days`, true) },
-          { label : `Unfollow ${first}`, hidden : post.mine, onClick : () => tool(`/cx/unfollow/${post.author._id}`, { unfollow : true }, `You'll stay friends with ${first} but won't see their posts`, true) },
+          { label : `Snooze ${first} for 30 days`, hidden : post.mine || !!post.external, onClick : () => tool(`/cx/snooze/${post.author._id}`, { snooze : true }, `You won't see posts from ${first} for 30 days`, true) },
+          { label : `Unfollow ${first}`, hidden : post.mine || !!post.external, onClick : () => tool(`/cx/unfollow/${post.author._id}`, { unfollow : true }, `You'll stay friends with ${first} but won't see their posts`, true) },
           { label : 'Remove post from group', danger : true, hidden : !post.canModerate || post.mine, onClick : async () => { try { await api.del(`/groups/${post.group._id}/posts/${post._id}`); notify('Post removed'); onDeleted?.(post) } catch (e) { notifyError(e.message) } } },
-          { label : 'Report post', danger : true, hidden : post.mine, onClick : () => setReporting(true) },
+          { label : 'Watch on YouTube', hidden : !post.external, onClick : () => window.open(post.external.link, '_blank', 'noopener') },
+          { label : 'Report post', danger : true, hidden : post.mine || !!post.external, onClick : () => setReporting(true) },
           { label : 'Move to trash', danger : true, hidden : !post.mine, onClick : () => setConfirmDelete(true) },
         ]} />
       )}

@@ -220,21 +220,23 @@ const feed = handle(async (req) => {
 const youtube = require('../helpers/youtube')
 
 // each YouTube Short is kept as a post (once) so it can be liked, commented on, saved and shared like any reel
-const mirrorShorts = async (shorts, ctx) => {
+// (Pixify and Connectify keep their own copy: their likes / reactions and comments stay separate)
+const mirrorShorts = async (shorts, ctx, app = 'pixify') => {
     if (!shorts.length) return []
+    const keyOf = (s) => (app === 'connectify' ? `cx:${s._id}` : s._id)
     await PostModel.bulkWrite(shorts.map((s) => ({
         updateOne : {
-            filter : { 'external.key' : s._id },
+            filter : { 'external.key' : keyOf(s) },
             update : {
-                $setOnInsert : { app : 'pixify', isReel : true, commentsOff : false, createdAt : new Date(s.createdAt || Date.now()) },
-                $set : { text : String(s.text || '').slice(0, 2200), media : s.media, external : { source : 'YouTube', key : s._id, by : s.external.by, byUrl : s.external.byUrl, link : s.external.link } }
+                $setOnInsert : { app, isReel : app === 'pixify', audience : 'public', commentsOff : false, createdAt : new Date(s.createdAt || Date.now()) },
+                $set : { text : String(s.text || '').slice(0, app === 'pixify' ? 2200 : 5000), media : s.media, external : { source : 'YouTube', key : keyOf(s), by : s.external.by, byUrl : s.external.byUrl, link : s.external.link } }
             },
             upsert : true
         }
     })), { ordered : false })
-    const docs = await PostModel.find({ 'external.key' : { $in : shorts.map((s) => s._id) } }).lean()
+    const docs = await PostModel.find({ 'external.key' : { $in : shorts.map(keyOf) } }).lean()
     const byKey = Object.fromEntries(docs.map((d) => [d.external.key, d]))
-    return S.serializePosts(shorts.map((s) => byKey[s._id]).filter(Boolean), ctx)
+    return S.serializePosts(shorts.map((s) => byKey[keyOf(s)]).filter(Boolean), ctx)
 }
 const explore = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'pixify')
@@ -467,12 +469,25 @@ const memories = handle(async (req) => {
 })
 
 // GET /watch -> Connectify videos (public, friends', my groups')
+// GET /watch -> Connectify videos (public, friends', my groups'), then YouTube Shorts (cursor "x:K") when they run out
 const watch = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'connectify')
-    const raw = await PostModel.find({ app : 'connectify', 'media.kind' : 'video', ...beforeFilter(req.query.before),
+    const cursor = String(req.query.before || '')
+    if (cursor.startsWith('x:')) {
+        const k = Math.max(1, parseInt(cursor.slice(2), 10) || 1)
+        try {
+            const shorts = await youtube.reels(k, 6)
+            return { posts : await mirrorShorts(shorts, ctx, 'connectify'), next : shorts.length && k < 500 ? `x:${k + 1}` : null }
+        } catch (error) {
+            console.error('[youtube]', error.message)
+            return { posts : [], next : null }
+        }
+    }
+    const raw = await PostModel.find({ app : 'connectify', 'media.kind' : 'video', 'external.key' : { $exists : false }, ...beforeFilter(cursor),
         $or : [{ audience : 'public', group : { $exists : false } }, { author : { $in : [...ctx.friends, ctx.me].map(S.oid) }, group : { $exists : false } }, { group : { $in : [...ctx.groups].map(S.oid) } }] })
         .sort({ createdAt : -1 }).limit(PAGE).lean()
-    return { posts : await S.serializePosts(raw, ctx), ...pageOf(raw, PAGE) }
+    const next = raw.length === PAGE ? raw[raw.length - 1].createdAt : youtube.enabled() ? 'x:1' : null
+    return { posts : await S.serializePosts(raw, ctx), next }
 })
 
 /* ---------- comments ---------- */
