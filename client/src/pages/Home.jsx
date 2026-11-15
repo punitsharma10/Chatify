@@ -310,8 +310,8 @@ const Home = () => {
 
       {/* phone: one pane at a time | tablet+: chat list + conversation side by side | xl: framed window */}
       <div className='relative mx-auto h-full xl:px-3 xl:py-3'>
-        <div className='grid h-full overflow-hidden bg-wa-surface md:grid-cols-[350px,1fr] lg:grid-cols-[minmax(400px,32%),1fr] xl:shadow-card'>
-          <section className={`h-full min-h-0 flex-col md:border-r md:border-wa-border ${!basePath ? "hidden" : "flex"} md:flex`}>
+        <div className='grid h-full grid-cols-1 overflow-hidden bg-wa-surface md:grid-cols-[350px,minmax(0,1fr)] lg:grid-cols-[minmax(400px,32%),minmax(0,1fr)] xl:shadow-card'>
+          <section className={`h-full min-h-0 min-w-0 flex-col md:border-r md:border-wa-border ${!basePath ? "hidden" : "flex"} md:flex`}>
             <div className='min-h-0 flex-1'>
               <Sidebar />
             </div>

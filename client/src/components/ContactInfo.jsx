@@ -11,6 +11,8 @@ import { formatPhone } from '../helpers/phone'
 import { usePeopleNames } from '../helpers/contacts'
 import { notify, notifyError } from '../helpers/toast'
 import Dialog from './Dialog'
+import { Link } from 'react-router-dom'
+import { AppMark } from './apps/AppLogos'
 import { EncryptionRow } from './Encryption'
 import { IoPersonAddOutline, IoPersonRemoveOutline, IoPencil, IoHeartOutline, IoHeartDislikeOutline, IoShareSocialOutline, IoFlagOutline } from 'react-icons/io5'
 
@@ -80,6 +82,17 @@ const ContactInfo = ({
           <section className='mt-2.5 bg-wa-surface px-6 py-4 shadow-sm'>
             <p className='text-sm text-wa-muted'>About</p>
             <p className='mt-1 text-[15px] text-wa-text'>{peer.about}</p>
+          </section>
+        )}
+
+        {/* the same person in the other Chatify apps */}
+        {peer.username && !peer.deleted && (
+          <section className='mt-2.5 bg-wa-surface px-6 py-3 shadow-sm'>
+            <p className='text-sm text-wa-muted'>@{peer.username}</p>
+            <div className='mt-2 grid grid-cols-2 gap-2'>
+              <Link to={`/pixify/u/${peer.username}`} className='flex items-center gap-2 rounded-lg border border-wa-border px-3 py-2 text-[14px] text-wa-text hover:bg-wa-hover'><AppMark app='pixify' size={22} />Pixify profile</Link>
+              <Link to={`/connectify/u/${peer.username}`} className='flex items-center gap-2 rounded-lg border border-wa-border px-3 py-2 text-[14px] text-wa-text hover:bg-wa-hover'><AppMark app='connectify' size={22} />Connectify profile</Link>
+            </div>
           </section>
         )}
 

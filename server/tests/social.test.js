@@ -199,6 +199,17 @@ const VID = 'https://res.cloudinary.com/demo/video/upload/v1/dog.mp4'
   check('delete post', (await req('DELETE', `/posts/${pub.body.post._id}`, A.token)).status === 200 && (await get(`/posts/${pub.body.post._id}`, A.token)).status === 404)
   check('a share of a deleted post shows it as unavailable', (await get(`/posts/${sh.body.post._id}`, B.token)).body.post.sharedPost.unavailable === true)
 
+  /* ================= suggestions + badges ================= */
+  // Dora follows Asha; Bilal follows Asha -> Dora sees Bilal? (followed by people Dora follows: no). Contacts/followers rank first.
+  await post('/follow/' + A.id, D.token, { follow: true })
+  const fsA = await get('/follow-suggestions', A.token)
+  check('follow suggestions: people who follow me', fsA.body.people.some((p) => p._id === D.id && p.reason === 'Follows you'))
+  check('follow suggestions skip people I follow', !fsA.body.people.some((p) => p._id === C.id))
+  const unreadB = await get('/notifications/unread', B.token)
+  check('unread counts per app', typeof unreadB.body.pixify === 'number' && typeof unreadB.body.connectify === 'number' && typeof unreadB.body.friendRequests === 'number')
+  await post('/friends/' + B.id, D.token, { action: 'request' })
+  check('pending friend requests counted', (await get('/notifications/unread', B.token)).body.friendRequests === 1)
+
   /* ================= search + profile ================= */
   const s1 = await get('/search?app=pixify&q=' + encodeURIComponent('@' + A.handle.slice(0, 6)), D.token)
   check('search by username prefix', s1.body.people.some((p) => p._id === A.id))

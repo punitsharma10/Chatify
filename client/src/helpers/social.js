@@ -138,18 +138,36 @@ export const useOnVisible = (onVisible, enabled = true) => {
 }
 
 // unread Pixify / Connectify notifications, kept live through the socket
+// one shared counter for every screen that shows a badge (app switchers, nav bars): fetched once, kept live
+const unreadStore = { counts : { pixify : 0, connectify : 0, friendRequests : 0 }, listeners : new Set(), socket : null, timer : null }
+const refreshUnread = () => {
+  clearTimeout(unreadStore.timer)
+  // several events in a row (e.g. many likes) = one request
+  unreadStore.timer = setTimeout(() => {
+    api.get('/notifications/unread').then((c) => {
+      unreadStore.counts = { pixify : c.pixify || 0, connectify : c.connectify || 0, friendRequests : c.friendRequests || 0 }
+      unreadStore.listeners.forEach((fn) => fn(unreadStore.counts))
+    }).catch(() => {})
+  }, 150)
+}
+const watchUnread = (socket) => {
+  if (!socket || unreadStore.socket === socket) return
+  if (unreadStore.socket) { unreadStore.socket.off('social-notification', refreshUnread); unreadStore.socket.off('connect', refreshUnread) }
+  unreadStore.socket = socket
+  socket.on('social-notification', refreshUnread)
+  socket.on('connect', refreshUnread)
+  refreshUnread()
+}
+
 export const useSocialUnread = () => {
   const socket = useSelector((s) => s.user.socketConnection)
-  const [counts, setCounts] = useState({ pixify : 0, connectify : 0, friendRequests : 0 })
-  const refresh = useCallback(() => { api.get('/notifications/unread').then(setCounts).catch(() => {}) }, [])
+  const [counts, setCounts] = useState(unreadStore.counts)
   useEffect(() => {
-    refresh()
-    if (!socket) return
-    socket.on('social-notification', refresh)
-    socket.on('connect', refresh)
-    return () => { socket.off('social-notification', refresh); socket.off('connect', refresh) }
-  }, [socket, refresh])
-  return { ...counts, refresh }
+    unreadStore.listeners.add(setCounts)
+    watchUnread(socket)
+    return () => { unreadStore.listeners.delete(setCounts) }
+  }, [socket])
+  return { ...counts, refresh : refreshUnread }
 }
 
 // a post link that can be sent in Chats; Chats shows it as a post card

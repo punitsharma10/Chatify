@@ -23,7 +23,7 @@ import { notificationPermission, requestNotifications, playNotificationSound } f
 import { IoNotificationsOffSharp } from "react-icons/io5";
 import { formatListTime } from '../helpers/formatTime';
 import { socketCall } from '../helpers/socketCall';
-import { plainPreview, renderFormatted } from '../helpers/formatText';
+import { plainPreview, renderFormatted, messagePreview } from '../helpers/formatText';
 import { MdChat, MdAddComment, MdOutlineChat, MdOutlineArchive, MdOutlineUnarchive, MdOutlineMarkChatUnread, MdOutlineMarkChatRead, MdOutlineCleaningServices } from "react-icons/md";
 import { HiDotsVertical } from "react-icons/hi";
 import { IoSearchOutline, IoClose, IoCamera, IoVideocam, IoChevronDown, IoNotificationsOffOutline, IoNotificationsOutline, IoTrashOutline, IoStarOutline, IoSettingsOutline, IoDocumentOutline, IoBan } from "react-icons/io5";
@@ -272,7 +272,7 @@ const SideBar = () => {
         {last.stickerUrl && <span className='flex shrink-0 items-center gap-1'><IoHappyOutline size={16} /> Sticker</span>}
         {last.audioUrl && <span className='flex shrink-0 items-center gap-1'><IoMic size={15} className={sentByMe ? '' : 'text-wa-green'} /> {voiceLength(last.audioDuration)}</span>}
         {last.fileUrl && <span className='flex min-w-0 items-center gap-1'><IoDocumentOutline size={15} className='shrink-0' />{!last.text && <span className='truncate'>{last.fileName}</span>}</span>}
-        {last.text && <span className='truncate'>{plainPreview(last.text)}</span>}
+        {last.text && <span className='truncate'>{messagePreview({ text : last.text })}</span>}
       </>
     )
   }
