@@ -6,6 +6,7 @@ import { api, enc, uploadMedia } from '../../../helpers/social'
 import { notifyError } from '../../../helpers/toast'
 import { Modal, ActionSheet } from '../../social/common'
 import { ThreadAvatar } from './DirectModals'
+import { dmApp, dmBase, dmRoot } from './directData'
 
 // "Details" panel of a conversation: mute, group name / photo, members, leave, block, delete.
 
@@ -24,7 +25,7 @@ const AddPeople = ({ thread, onClose, onAdded }) => {
   useEffect(() => {
     if (!q.trim()) return setFound([])
     let alive = true
-    const t = setTimeout(() => api.get(`/search?app=pixify&q=${enc(q.trim())}`).then((r) => alive && setFound(r.people || [])).catch(() => {}), 250)
+    const t = setTimeout(() => api.get(`/search?app=${dmApp()}&q=${enc(q.trim())}`).then((r) => alive && setFound(r.people || [])).catch(() => {}), 250)
     return () => { alive = false; clearTimeout(t) }
   }, [q])
   const inGroup = (p) => p.self || thread.members.some((m) => m._id === p._id)
@@ -89,7 +90,7 @@ const DirectDetails = ({ thread, onClose, onThread, onDelete, onBlock }) => {
     await run(async () => api.patch(`/dm/threads/${thread._id}`, { avatar : (await uploadMedia([file]))[0].url }))
     setPhotoBusy(false)
   }
-  const leave = () => run(async () => { await api.post(`/dm/threads/${thread._id}/leave`); navigate('/pixify/direct') })
+  const leave = () => run(async () => { await api.post(`/dm/threads/${thread._id}/leave`); navigate(`${dmBase()}`) })
 
   return (
     <aside className='flex h-full w-full shrink-0 flex-col overflow-y-auto border-l border-px-border bg-px-bg lg:w-[360px]'>
@@ -128,7 +129,7 @@ const DirectDetails = ({ thread, onClose, onThread, onDelete, onBlock }) => {
         </div>
         {thread.members.map((p) => (
           <div key={p._id} className='flex items-center gap-3 px-6 py-2 hover:bg-px-hover max-md:px-4'>
-            <button onClick={() => navigate(`/pixify/u/${p.username || p._id}`)} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
+            <button onClick={() => navigate(`${dmRoot()}/u/${p.username || p._id}`)} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
               <Avatar width={44} height={44} name={p.name} imageUrl={p.profile_pic} />
               <span className='min-w-0'>
                 <span className='block truncate text-sm font-semibold'>{p.username || p.name}</span>

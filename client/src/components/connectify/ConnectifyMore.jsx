@@ -529,7 +529,7 @@ export const ConnectifyListing = () => {
               {l.status !== 'available' && <Btn onClick={() => patch({ status : 'available' }, 'Marked as available')}>Mark as available</Btn>}
               <Btn onClick={() => setConfirm(true)}>Delete</Btn>
             </> : <>
-              <Btn primary onClick={() => navigate('/' + l.seller._id)}><IoChatbubbleEllipses />Message seller</Btn>
+              <Btn primary onClick={() => navigate(`/connectify/messages/u/${l.seller.username || l.seller._id}`)}><IoChatbubbleEllipses />Message seller</Btn>
               <Btn onClick={async () => { try { const r = await api.post(`/market/${l._id}/save`, { save : !l.saved }); setL((x) => ({ ...x, saved : r.saved })); notify(r.saved ? 'Saved' : 'Removed from saved') } catch (e) { notifyError(e.message) } }}>{l.saved ? <IoBookmark /> : <IoBookmarkOutline />}{l.saved ? 'Saved' : 'Save'}</Btn>
             </>}
           </div>
@@ -608,7 +608,7 @@ export const ConnectifyBirthdays = () => {
     <div key={p._id} className='flex items-center gap-3 rounded-lg p-2'>
       <Link to={userLink(p)}><Avatar width={56} height={56} name={p.name} imageUrl={p.profile_pic} /></Link>
       <span className='min-w-0 flex-1'><Link to={userLink(p)} className='block truncate font-semibold hover:underline'>{p.name}</Link><span className='text-[13px] text-cx-muted'>{sub}</span></span>
-      <Link to={`/${p._id}`} className='flex h-9 items-center gap-2 rounded-md bg-cx-input px-3 text-[15px] font-semibold'><IoChatbubbleEllipses />Message</Link>
+      <Link to={`/connectify/messages/u/${p.username || p._id}`} className='flex h-9 items-center gap-2 rounded-md bg-cx-input px-3 text-[15px] font-semibold'><IoChatbubbleEllipses />Message</Link>
     </div>
   )
   return (

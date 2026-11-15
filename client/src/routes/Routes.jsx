@@ -98,6 +98,17 @@ const router = createBrowserRouter([
                         { path : 'tags/:tag', element : <ConnectifyTag/> },
                         { path : 'birthdays', element : <ConnectifyBirthdays/> },
                         { path : 'pokes', element : <ConnectifyPokes/> },
+                        // Connectify Messages: its own inbox (same screens as Pixify Direct, Connectify colours)
+                        {
+                            path : 'messages',
+                            element : <div className='cx-as-px h-full'><PixifyDirect/></div>,
+                            children : [
+                                { index : true, element : <DirectEmpty/> },
+                                { path : 'requests', element : <DirectEmpty/> },
+                                { path : 't/:threadId', element : <DirectThread/> },
+                                { path : 'u/:handle', element : <DirectOpenUser/> },
+                            ]
+                        },
                     ]
                 },
                 {

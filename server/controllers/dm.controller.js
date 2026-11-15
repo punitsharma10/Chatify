@@ -1,6 +1,6 @@
 const UserModel = require('../models/user.model')
 const { DmThreadModel, DmMessageModel } = require('../models/dm.model')
-const { FollowModel } = require('../models/social.model')
+const { FollowModel, PostModel } = require('../models/social.model')
 const { isAllowedMediaUrl, isValidId, hasBlocked, publicUser, receiptsAllowed, LIMITS } = require('../helpers/chat')
 const S = require('../helpers/social')
 
@@ -30,12 +30,21 @@ const loadMe = async (req) => {
     if (!me || me.deletedAt) throw fail('session out', 401)
     return me
 }
-const pairKeyOf = (a, b) => [String(a), String(b)].sort().join('_')
+// which app's inbox: Pixify (default) or Connectify
+const dmApp = (req) => ((req.query?.app || req.body?.app) === 'connectify' ? 'connectify' : 'pixify')
+const appOfThread = (t) => (t?.app === 'connectify' ? 'connectify' : 'pixify')
+// older Pixify conversations were saved before `app` existed
+const appFilter = (app) => (app === 'connectify' ? { app : 'connectify' } : { app : { $ne : 'connectify' } })
+const pairKeyOf = (a, b, app = 'pixify') => (app === 'connectify' ? 'cx:' : '') + [String(a), String(b)].sort().join('_')
 const memberOf = (thread, id) => thread.members.find((m) => String(m.userId) === String(id))
 const others = (thread, id) => thread.members.filter((m) => String(m.userId) !== String(id))
 const follows = async (follower, following) => !!(await FollowModel.exists({ follower, following, status : 'active' }))
 // Instagram rule: messages from people you follow go to your inbox, everyone else's to Requests
-const folderFor = async (recipient, sender) => ((await follows(recipient, sender)) ? 'inbox' : 'request')
+// Connectify (like Facebook): friends' messages go to the inbox, everyone else's to Message requests
+const folderFor = async (recipient, sender, app = 'pixify') => {
+    if (app === 'connectify') return (await S.friendIds(recipient)).includes(String(sender)) ? 'inbox' : 'request'
+    return (await follows(recipient, sender)) ? 'inbox' : 'request'
+}
 
 const loadThread = async (id, meId) => {
     if (!isValidId(String(id))) throw fail('Conversation not found', 404)
@@ -105,6 +114,7 @@ const serializeThread = (t, viewer, users) => {
     const peerUser = peer && users[peer._id]
     return {
         _id : String(t._id),
+        app : appOfThread(t),
         isGroup : !!t.isGroup,
         title : t.isGroup ? (t.name || groupTitle(people) || 'Just you') : peer?.profileName || peer?.name || 'Pixify user',
         name : t.name || '',
@@ -236,7 +246,7 @@ const createMessage = async (threadId, me, body) => {
         if (String(m.userId) === String(me._id)) {
             out.lastReadAt = now
             if (body.kind !== 'system') out.status = 'inbox'
-        } else if (m.status === 'request' && await follows(m.userId, me._id)) {
+        } else if (m.status === 'request' && (await folderFor(m.userId, me._id, appOfThread(thread))) === 'inbox') {
             out.status = 'inbox'
         }
         return out
@@ -259,7 +269,9 @@ const buildBody = async (body, me) => {
     }
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     if (body.postId) {
-        const ctx = await S.viewerContext(me, 'pixify')
+        const raw = isValidId(String(body.postId)) ? await PostModel.findById(body.postId).select('app').lean() : null
+        if (!raw) throw fail('This post is no longer available', 404)
+        const ctx = await S.viewerContext(me, raw.app)
         const { post } = await S.loadVisiblePost(body.postId, ctx)
         return { ...out, kind : 'post', post : post._id }
     }
@@ -286,7 +298,7 @@ const visibleTo = (t, me) => {
 const listThreads = handle(async (req) => {
     const me = await loadMe(req)
     const status = req.query.folder === 'requests' ? 'request' : 'inbox'
-    const filter = { members : { $elemMatch : { userId : me._id, status } }, lastMessageAt : { $exists : true } }
+    const filter = { ...appFilter(dmApp(req)), members : { $elemMatch : { userId : me._id, status } }, lastMessageAt : { $exists : true } }
     if (req.query.before && !Number.isNaN(Date.parse(req.query.before))) filter.lastMessageAt = { $lt : new Date(req.query.before) }
     const threads = await DmThreadModel.find(filter).sort({ lastMessageAt : -1 }).limit(THREAD_PAGE).lean()
     const users = await loadThreadUsers(threads, threads.map((t) => t.lastMessage?.from))
@@ -295,8 +307,8 @@ const listThreads = handle(async (req) => {
 })
 
 // GET /dm/unread -> { inbox: threads with new messages, requests: waiting requests }
-const unreadCounts = async (meId) => {
-    const threads = await DmThreadModel.find({ 'members.userId' : meId, lastMessageAt : { $exists : true } }).select('members lastMessage lastMessageAt').lean()
+const unreadCounts = async (meId, app = 'pixify') => {
+    const threads = await DmThreadModel.find({ ...appFilter(app), 'members.userId' : meId, lastMessageAt : { $exists : true } }).select('members lastMessage lastMessageAt').lean()
     let inbox = 0, requests = 0
     for (const t of threads) {
         if (!visibleTo(t, meId)) continue
@@ -306,20 +318,20 @@ const unreadCounts = async (meId) => {
     }
     return { inbox, requests }
 }
-const unread = handle(async (req) => unreadCounts(req.user._id))
+const unread = handle(async (req) => unreadCounts(req.user._id, dmApp(req)))
 
 const threadOut = async (thread, me) => serializeThread(thread, me, await loadThreadUsers([thread], [thread.lastMessage?.from]))
 
 // one-to-one thread with someone (made when first opened; shows in lists after the first message)
-const openWith = async (me, other) => {
+const openWith = async (me, other, app = 'pixify') => {
     if (String(other._id) === String(me._id)) throw fail("You can't message yourself")
     if (hasBlocked(other, me._id)) throw fail("This account isn't available", 404)
-    const pairKey = pairKeyOf(me._id, other._id)
+    const pairKey = pairKeyOf(me._id, other._id, app)
     let thread = await DmThreadModel.findOne({ pairKey }).lean()
     if (!thread) {
-        const status = await folderFor(other._id, me._id)
+        const status = await folderFor(other._id, me._id, app)
         try {
-            thread = (await DmThreadModel.create({ pairKey, createdBy : me._id, members : [{ userId : me._id, status : 'inbox' }, { userId : other._id, status }] })).toObject()
+            thread = (await DmThreadModel.create({ app, pairKey, createdBy : me._id, members : [{ userId : me._id, status : 'inbox' }, { userId : other._id, status }] })).toObject()
         } catch (error) {
             if (error?.code !== 11000) throw error
             thread = await DmThreadModel.findOne({ pairKey }).lean()
@@ -333,7 +345,7 @@ const withUser = handle(async (req) => {
     const me = await loadMe(req)
     const other = await S.findUserByHandle(req.params.handle)
     if (!other) throw fail("This account isn't available", 404)
-    return { thread : await threadOut(await openWith(me, other), me) }
+    return { thread : await threadOut(await openWith(me, other, dmApp(req)), me) }
 })
 
 const peopleFrom = async (ids, me) => {
@@ -350,12 +362,13 @@ const createThread = handle(async (req) => {
     const me = await loadMe(req)
     const people = await peopleFrom(req.body.userIds, me)
     if (!people.length) throw fail('Choose who to message')
-    if (people.length === 1 && !req.body.group) return { thread : await threadOut(await openWith(me, people[0]), me) }
+    const app = dmApp(req)
+    if (people.length === 1 && !req.body.group) return { thread : await threadOut(await openWith(me, people[0], app), me) }
     if (people.length + 1 > MAX_GROUP) throw fail(`Groups can have up to ${MAX_GROUP} people`)
     const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 100) : ''
     const members = [{ userId : me._id, role : 'admin', status : 'inbox' }]
-    for (const p of people) members.push({ userId : p._id, role : 'member', status : await folderFor(p._id, me._id) })
-    const thread = await DmThreadModel.create({ isGroup : true, name, createdBy : me._id, members })
+    for (const p of people) members.push({ userId : p._id, role : 'member', status : await folderFor(p._id, me._id, app) })
+    const thread = await DmThreadModel.create({ app, isGroup : true, name, createdBy : me._id, members })
     await systemMessage(thread, me, 'created')
     return { thread : await threadOut(await DmThreadModel.findById(thread._id).lean(), me) }
 })
@@ -403,7 +416,7 @@ const share = handle(async (req) => {
     const text = typeof req.body.text === 'string' ? req.body.text.trim().slice(0, LIMITS.TEXT_MAX) : ''
     const targets = []
     for (const id of threadIds) targets.push(await loadThread(id, me._id))
-    for (const u of await peopleFrom(userIds, me)) targets.push(await openWith(me, u))
+    for (const u of await peopleFrom(userIds, me)) targets.push(await openWith(me, u, dmApp(req)))
     const seen = new Set()
     let sent = 0
     const failed = []
@@ -424,12 +437,13 @@ const share = handle(async (req) => {
     return { sent, failed }
 })
 
-// GET /dm/suggested -> recent conversations + people you follow (for "New message" and the share sheet)
+// GET /dm/suggested -> recent conversations + people you follow (Pixify) / your friends (Connectify)
 const suggested = handle(async (req) => {
     const me = await loadMe(req)
-    const threads = (await DmThreadModel.find({ 'members.userId' : me._id, lastMessageAt : { $exists : true } }).sort({ lastMessageAt : -1 }).limit(30).lean())
+    const app = dmApp(req)
+    const threads = (await DmThreadModel.find({ ...appFilter(app), 'members.userId' : me._id, lastMessageAt : { $exists : true } }).sort({ lastMessageAt : -1 }).limit(30).lean())
         .filter((t) => visibleTo(t, me._id))
-    const following = await S.followingIds(me._id)
+    const following = app === 'connectify' ? await S.friendIds(me._id) : await S.followingIds(me._id)
     const users = await loadThreadUsers(threads, following.slice(0, 60))
     const inThreads = new Set(threads.filter((t) => !t.isGroup).flatMap((t) => t.members.map((m) => String(m.userId))))
     const people = following.filter((id) => !inThreads.has(id)).map((id) => users[id]).filter((u) => u && !u.deletedAt && !S.blockedEitherWay(me, u)).slice(0, 30).map((u) => S.personCard(u, me))
@@ -522,7 +536,7 @@ const addMembers = handle(async (req) => {
     if (!people.length) throw fail('Choose people to add')
     if (thread.members.length + people.length > MAX_GROUP) throw fail(`Groups can have up to ${MAX_GROUP} people`)
     const added = []
-    for (const p of people) added.push({ userId : p._id, role : 'member', status : await folderFor(p._id, me._id), joinedAt : new Date() })
+    for (const p of people) added.push({ userId : p._id, role : 'member', status : await folderFor(p._id, me._id, appOfThread(thread)), joinedAt : new Date() })
     await DmThreadModel.updateOne({ _id : thread._id }, { $push : { members : { $each : added } } })
     await systemMessage(thread, me, 'added', { targets : people.map((p) => p._id) })
     return { thread : await threadOut(await DmThreadModel.findById(thread._id).lean(), me) }
@@ -650,7 +664,7 @@ const forward = handle(async (req) => {
     for (const k of ['text', 'media', 'audio', 'post', 'profile']) if (msg[k] !== undefined && msg[k] !== null && !(Array.isArray(msg[k]) && !msg[k].length)) body[k] = msg[k]
     const targets = []
     for (const id of threadIds) targets.push(await loadThread(id, me._id))
-    for (const u of await peopleFrom(userIds, me)) targets.push(await openWith(me, u))
+    for (const u of await peopleFrom(userIds, me)) targets.push(await openWith(me, u, appOfThread(await DmThreadModel.findById(msg.thread).select('app').lean())))
     let sent = 0
     const failed = []
     for (const t of targets) {
@@ -692,8 +706,11 @@ const notes = handle(async (req) => {
 
 // is there an accepted Pixify conversation between these two? (lets them call each other)
 const acceptedBetween = async (a, b) => {
-    const t = await DmThreadModel.findOne({ pairKey : pairKeyOf(a, b) }).select('members lastMessageAt').lean()
-    return !!(t && t.lastMessageAt && t.members.every((m) => m.status === 'inbox'))
+    for (const app of ['pixify', 'connectify']) {
+        const t = await DmThreadModel.findOne({ pairKey : pairKeyOf(a, b, app) }).select('members lastMessageAt').lean()
+        if (t && t.lastMessageAt && t.members.every((m) => m.status === 'inbox')) return true
+    }
+    return false
 }
 
 module.exports = {

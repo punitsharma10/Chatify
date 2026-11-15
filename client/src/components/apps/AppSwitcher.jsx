@@ -25,7 +25,7 @@ const AppSwitcher = ({ variant = 'rail', className = '', only }) => {
   const unread = useUnreadChats()
   const social = useSocialUnread()
   // badge per app: unread chats, or new Pixify / Connectify notifications (+ friend requests)
-  const badgeOf = (id) => (id === 'chats' ? unread : id === 'pixify' ? social.pixify + social.dm : social.connectify + social.friendRequests)
+  const badgeOf = (id) => (id === 'chats' ? unread : id === 'pixify' ? social.pixify + social.dm : social.connectify + social.friendRequests + social.cxDm)
   const apps = only ? APPS.filter((a) => only.includes(a.id)) : APPS
 
   if (variant === 'bar') {

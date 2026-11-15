@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { IoPaperPlaneOutline, IoEllipsisHorizontal, IoClose, IoExpandOutline, IoCreateOutline } from 'react-icons/io5'
 import Avatar from '../../Avatar'
 import { api, useSocialUnread, shortAgo, useOnVisible } from '../../../helpers/social'
-import { useThreadList, listPreview } from './directData'
+import { useThreadList, listPreview, dmApp, dmBase } from './directData'
 import { ThreadAvatar, NewMessageModal } from './DirectModals'
 import DirectThread from './DirectThread'
 
@@ -11,7 +11,7 @@ import DirectThread from './DirectThread'
 // count and your latest chats. Clicking it opens a popup over the current page with your conversations; a chat opens
 // inside the popup, and "enlarge" goes to the full Messages page.
 
-const Popup = ({ onClose, unreadCount }) => {
+export const MessagesPopup = ({ onClose, unreadCount }) => {
   const navigate = useNavigate()
   const list = useThreadList('inbox')
   const more = useOnVisible(list.loadMore, !!list.next)
@@ -22,7 +22,7 @@ const Popup = ({ onClose, unreadCount }) => {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-  const enlarge = () => { onClose(); navigate(open ? `/pixify/direct/t/${open}` : '/pixify/direct') }
+  const enlarge = () => { onClose(); navigate(open ? `${dmBase()}/t/${open}` : `${dmBase()}`) }
 
   return (
     <div role='dialog' aria-label='Messages'
@@ -83,11 +83,11 @@ const MessagesPill = () => {
   // refresh the faces when new messages arrive
   useEffect(() => {
     let alive = true
-    api.get('/dm/threads').then((r) => alive && setThreads(r.threads.slice(0, 3))).catch(() => {})
+    api.get(`/dm/threads?app=${dmApp()}`).then((r) => alive && setThreads(r.threads.slice(0, 3))).catch(() => {})
     return () => { alive = false }
   }, [unread.dm])
   const face = (t) => (t.isGroup ? t.members[0] : t.peer) || {}
-  if (popup) return <Popup onClose={() => setPopup(false)} unreadCount={unread.dm} />
+  if (popup) return <MessagesPopup onClose={() => setPopup(false)} unreadCount={unread.dm} />
   return (
     <button onClick={() => setPopup(true)} aria-label={`Messages${unread.dm ? `, ${unread.dm} unread` : ''}`}
       className='fixed bottom-[60px] right-3 z-30 flex h-12 items-center gap-2.5 rounded-full bg-px-bg pl-4 pr-3 text-px-text shadow-[0_4px_18px_rgba(0,0,0,0.18)] ring-1 ring-px-border transition hover:bg-px-hover md:bottom-6 md:right-6 md:h-14 md:gap-3 md:pl-5 md:pr-4'>

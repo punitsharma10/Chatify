@@ -5,6 +5,7 @@ import Avatar from '../../Avatar'
 import { api, enc, postLink } from '../../../helpers/social'
 import { notify, notifyError } from '../../../helpers/toast'
 import { Modal } from '../../social/common'
+import { dmApp, dmBase, dmRoot } from './directData'
 
 // "New message" and the paper-plane "Share" sheet, both Instagram-style.
 
@@ -46,7 +47,7 @@ const usePeopleSearch = (q) => {
     let alive = true
     setRes((r) => ({ ...r, loading : true }))
     const t = setTimeout(() => {
-      api.get(`/search?app=pixify&q=${enc(query)}`).then((r) => alive && setRes({ people : r.people || [], loading : false })).catch(() => alive && setRes({ people : [], loading : false }))
+      api.get(`/search?app=${dmApp()}&q=${enc(query)}`).then((r) => alive && setRes({ people : r.people || [], loading : false })).catch(() => alive && setRes({ people : [], loading : false }))
     }, 250)
     return () => { alive = false; clearTimeout(t) }
   }, [q])
@@ -57,7 +58,7 @@ const useSuggested = () => {
   const [s, setS] = useState({ threads : [], people : [], loading : true })
   useEffect(() => {
     let alive = true
-    api.get('/dm/suggested').then((r) => alive && setS({ ...r, loading : false })).catch(() => alive && setS({ threads : [], people : [], loading : false }))
+    api.get(`/dm/suggested?app=${dmApp()}`).then((r) => alive && setS({ ...r, loading : false })).catch(() => alive && setS({ threads : [], people : [], loading : false }))
     return () => { alive = false }
   }, [])
   return s
@@ -93,9 +94,9 @@ export const NewMessageModal = ({ onClose }) => {
   const start = async () => {
     setBusy(true)
     try {
-      const res = await api.post('/dm/threads', { userIds : picked.map((p) => p._id), name : picked.length > 1 ? name : '', group : picked.length > 1 })
+      const res = await api.post('/dm/threads', { app : dmApp(), userIds : picked.map((p) => p._id), name : picked.length > 1 ? name : '', group : picked.length > 1 })
       onClose()
-      navigate(`/pixify/direct/t/${res.thread._id}`)
+      navigate(`${dmBase()}/t/${res.thread._id}`)
     } catch (e) {
       notifyError(e.message)
       setBusy(false)
@@ -161,7 +162,7 @@ export const ShareSheet = ({ post, profile, forwardId, onClose, onChats }) => {
       const targets = { threadIds : picked.filter((x) => x.threadId).map((x) => x.threadId), userIds : picked.filter((x) => x.userId).map((x) => x.userId) }
       const res = forwardId
         ? await api.post(`/dm/messages/${forwardId}/forward`, targets)
-        : await api.post('/dm/share', { ...(post ? { postId : post._id } : { profileId : profile._id }), ...targets, text })
+        : await api.post('/dm/share', { app : dmApp(), ...(post ? { postId : post._id } : { profileId : profile._id }), ...targets, text })
       onClose()
       if (res.failed?.length) notifyError(res.failed[0])
       else notify('Sent')
@@ -172,7 +173,7 @@ export const ShareSheet = ({ post, profile, forwardId, onClose, onChats }) => {
   }
 
   const copy = async () => {
-    const link = post ? postLink(post) : `${window.location.origin}/pixify/u/${profile.username || profile._id}`
+    const link = post ? postLink(post) : `${window.location.origin}${dmRoot()}/u/${profile.username || profile._id}`
     try { await navigator.clipboard.writeText(link); notify('Link copied') } catch { notifyError("Couldn't copy the link") }
     onClose()
   }

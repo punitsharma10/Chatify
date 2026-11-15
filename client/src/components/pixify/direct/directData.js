@@ -7,6 +7,11 @@ import { newClientId } from '../../../helpers/socketCall'
 // Pixify Direct (Instagram-style messages) data: thread lists and one open thread, kept live through the
 // 'px-dm' socket events the server sends (see server/controllers/dm.controller.js).
 
+// which app's messages are on screen: Pixify Direct or Connectify Messages (they have separate inboxes)
+export const dmApp = () => (window.location.pathname.startsWith('/connectify') ? 'connectify' : 'pixify')
+export const dmBase = () => (dmApp() === 'connectify' ? '/connectify/messages' : '/pixify/direct')
+export const dmRoot = () => `/${dmApp()}`
+
 const byRecent = (a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0)
 
 const useDmEvents = (handler) => {
@@ -26,6 +31,7 @@ const useDmEvents = (handler) => {
 
 // conversations in the inbox ('inbox') or under Requests ('requests')
 export const useThreadList = (folder = 'inbox') => {
+  const app = dmApp()
   const [state, setState] = useState({ threads : [], loading : true, next : null, error : '' })
   const gen = useRef(0)
 
@@ -33,7 +39,7 @@ export const useThreadList = (folder = 'inbox') => {
     const g = before ? gen.current : ++gen.current
     if (!before) setState((s) => ({ ...s, loading : true, error : '' }))
     try {
-      const res = await api.get(`/dm/threads?folder=${folder}${before ? `&before=${enc(before)}` : ''}`)
+      const res = await api.get(`/dm/threads?app=${app}&folder=${folder}${before ? `&before=${enc(before)}` : ''}`)
       if (g !== gen.current) return
       setState((s) => {
         const list = before ? [...s.threads, ...res.threads.filter((t) => !s.threads.some((x) => x._id === t._id))] : res.threads
@@ -42,13 +48,15 @@ export const useThreadList = (folder = 'inbox') => {
     } catch (e) {
       if (g === gen.current) setState((s) => ({ ...s, loading : false, error : e.message }))
     }
-  }, [folder])
+  }, [folder, app])
 
   useEffect(() => { load() }, [load])
 
   const wanted = folder === 'requests' ? 'request' : 'inbox'
   useDmEvents((e) => {
     if (e.type === 'reconnect') return load()
+    // the other app's conversations stay in their own inbox
+    if (e.thread && (e.thread.app || 'pixify') !== app) return
     setState((s) => {
       let threads = s.threads
       if (e.type === 'thread-remove') threads = threads.filter((t) => t._id !== e.threadId)

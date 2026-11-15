@@ -15,7 +15,7 @@ import { api, uploadMedia, checkMediaFile, useOnVisible, splitMentions } from '.
 import { socketCall } from '../../../helpers/socketCall'
 import { notify, notifyError } from '../../../helpers/toast'
 import { Modal, MediaThumb } from '../../social/common'
-import { useThread, activeLabel, stampLabel, systemText, isJumboEmoji } from './directData'
+import { useThread, activeLabel, stampLabel, systemText, isJumboEmoji, dmBase, dmRoot } from './directData'
 import { ThreadAvatar, ShareSheet } from './DirectModals'
 import DirectDetails from './DirectDetails'
 
@@ -36,7 +36,7 @@ const BubbleText = ({ text, mine }) => (
     {text.split(/(https?:\/\/[^\s<]+[^\s<.,:;"')\]!?])/gi).map((part, i) => {
       if (/^https?:\/\//i.test(part)) return <a key={i} href={part} target='_blank' rel='noopener noreferrer' className='underline' onClick={(e) => e.stopPropagation()}>{part}</a>
       return splitMentions(part).map((p, j) => (p.startsWith('@') && p.length > 3
-        ? <Link key={`${i}-${j}`} to={`/pixify/u/${p.slice(1)}`} onClick={(e) => e.stopPropagation()} className={`font-semibold ${mine ? '' : 'text-px-blue'}`}>{p}</Link>
+        ? <Link key={`${i}-${j}`} to={`${dmRoot()}/u/${p.slice(1)}`} onClick={(e) => e.stopPropagation()} className={`font-semibold ${mine ? '' : 'text-px-blue'}`}>{p}</Link>
         : <React.Fragment key={`${i}-${j}`}>{p}</React.Fragment>))
     })}
   </span>
@@ -62,7 +62,7 @@ const PostCard = ({ postId }) => {
   }
   const video = post.media?.[0]?.kind === 'video'
   return (
-    <button onClick={(e) => { e.stopPropagation(); navigate(`/pixify/p/${post._id}`) }} className='block w-[236px] overflow-hidden rounded-2xl bg-px-raised text-left'>
+    <button onClick={(e) => { e.stopPropagation(); navigate(`${dmRoot()}/p/${post._id}`) }} className='block w-[236px] overflow-hidden rounded-2xl bg-px-raised text-left'>
       <span className='flex items-center gap-2 px-3 py-2'>
         <Avatar width={28} height={28} name={post.author.name} imageUrl={post.author.profile_pic} />
         <span className='truncate text-sm font-semibold'>{post.author.username || post.author.name}</span>
@@ -84,7 +84,7 @@ const ProfileCard = ({ profile }) => {
       <Avatar width={64} height={64} name={profile.name} imageUrl={profile.profile_pic} />
       <p className='mt-1 max-w-full truncate text-sm font-semibold'>{profile.profileName || profile.name}</p>
       <p className='max-w-full truncate text-[13px] text-px-muted'>{profile.username}</p>
-      <button onClick={(e) => { e.stopPropagation(); navigate(`/pixify/u/${profile.username || profile._id}`) }} className='mt-2 h-8 w-full rounded-lg bg-px-bg text-sm font-semibold hover:bg-px-hover'>View profile</button>
+      <button onClick={(e) => { e.stopPropagation(); navigate(`${dmRoot()}/u/${profile.username || profile._id}`) }} className='mt-2 h-8 w-full rounded-lg bg-px-bg text-sm font-semibold hover:bg-px-hover'>View profile</button>
     </div>
   )
 }
@@ -213,7 +213,7 @@ const Message = ({ m, mine, me, sender, showSender, showAvatar, onReply, onEdit,
 
   return (
     <div className={`group flex items-end gap-2 px-4 ${mine ? 'flex-row-reverse' : ''}`}>
-      {!mine && <span className='w-7 shrink-0'>{showAvatar && sender && <Link to={`/pixify/u/${sender.username || sender._id}`}><Avatar width={28} height={28} name={sender.name} imageUrl={sender.profile_pic} /></Link>}</span>}
+      {!mine && <span className='w-7 shrink-0'>{showAvatar && sender && <Link to={`${dmRoot()}/u/${sender.username || sender._id}`}><Avatar width={28} height={28} name={sender.name} imageUrl={sender.profile_pic} /></Link>}</span>}
       <div className={`flex min-w-0 max-w-[75%] flex-col md:max-w-[60%] ${mine ? 'items-end' : 'items-start'}`}>
         {showSender && sender && <span className='mb-0.5 ml-3 text-xs text-px-muted'>{sender.username || sender.name}</span>}
         {m.replyTo && (
@@ -367,8 +367,8 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
   const [forwarding, setForwarding] = useState(null)
 
   useEffect(() => { setDetails(false); setReply(null); setEditing(null) }, [threadId])
-  const leave = () => (embedded ? onBack?.() : navigate('/pixify/direct'))
-  useEffect(() => { if (t.error === 'removed') { if (embedded) onBack?.(); else navigate('/pixify/direct', { replace : true }) } }, [t.error, navigate, embedded, onBack])
+  const leave = () => (embedded ? onBack?.() : navigate(`${dmBase()}`))
+  useEffect(() => { if (t.error === 'removed') { if (embedded) onBack?.(); else navigate(`${dmBase()}`, { replace : true }) } }, [t.error, navigate, embedded, onBack])
 
   const people = useMemo(() => {
     const map = { [me] : { _id : me, name : user.name, username : user.username, profile_pic : user.profile_pic } }
@@ -442,7 +442,7 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
     try {
       t.setThread((await api.post(`/dm/threads/${threadId}/accept`)).thread)
       // it now lives in the inbox
-      navigate(`/pixify/direct/t/${threadId}`, { replace : true, state : null })
+      navigate(`${dmBase()}/t/${threadId}`, { replace : true, state : null })
     } catch (e) { notifyError(e.message) }
   }
   const deleteChat = () => setConfirm({
@@ -506,7 +506,7 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
       <div className={`flex h-full min-w-0 flex-1 flex-col ${details ? (embedded ? 'hidden' : 'max-lg:hidden') : ''}`}>
         <header className={`flex shrink-0 items-center gap-3 border-b border-px-border px-4 ${embedded ? 'h-[60px]' : 'h-[75px] max-md:h-[60px]'}`}>
           <button onClick={leave} className={embedded ? '' : 'md:hidden'} aria-label='Back'><IoChevronBack size={embedded ? 24 : 28} /></button>
-          <button onClick={() => (thread.isGroup ? setDetails(true) : navigate(`/pixify/u/${peer.username || peer._id}`))} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
+          <button onClick={() => (thread.isGroup ? setDetails(true) : navigate(`${dmRoot()}/u/${peer.username || peer._id}`))} className='flex min-w-0 flex-1 items-center gap-3 text-left'>
             <ThreadAvatar thread={thread} size={44} />
             <span className='min-w-0'>
               <span className='block truncate font-semibold'>{thread.title}</span>
@@ -530,10 +530,10 @@ const DirectThread = ({ threadId : givenId, embedded = false, onBack }) => {
               <div className='flex flex-col items-center gap-1 px-4 pb-6 pt-8 text-center'>
                 <ThreadAvatar thread={thread} size={96} />
                 <p className='mt-2 text-xl font-semibold'>{thread.isGroup ? thread.title : peer?.profileName || peer?.name}</p>
-                {!thread.isGroup && <p className='text-sm text-px-muted'>{peer?.username} · Pixify</p>}
+                {!thread.isGroup && <p className='text-sm text-px-muted'>{peer?.username} · {dmRoot() === '/connectify' ? 'Connectify' : 'Pixify'}</p>}
                 {thread.isGroup
                   ? <button onClick={() => setDetails(true)} className='mt-3 h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>View members</button>
-                  : <button onClick={() => navigate(`/pixify/u/${peer?.username || peer?._id}`)} className='mt-3 h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>View profile</button>}
+                  : <button onClick={() => navigate(`${dmRoot()}/u/${peer?.username || peer?._id}`)} className='mt-3 h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>View profile</button>}
               </div>
             )}
             {rows}

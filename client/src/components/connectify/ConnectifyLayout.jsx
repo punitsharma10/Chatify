@@ -11,6 +11,8 @@ import { useSocialUnread } from '../../helpers/social'
 import { useSendToChat } from '../social/common'
 import Composer from './Composer'
 import { SHORTCUTS, BirthdaysCard } from './ConnectifyMore'
+import { MessagesPopup } from '../pixify/direct/MessagesPill'
+import { ShareSheet } from '../pixify/direct/DirectModals'
 
 const CxCtx = createContext(null)
 export const useConnectify = () => useContext(CxCtx)
@@ -47,12 +49,17 @@ const ConnectifyLayout = () => {
   const send = useSendToChat()
   const [composer, setComposer] = useState(null) // null | { sharedPost?, withPhotos? }
   const [version, setVersion] = useState(0)
+  const [messages, setMessages] = useState(false) // Messenger popup
+  const [sharing, setSharing] = useState(null) // post being sent in Connectify Messages
+  const inMessages = pathname.startsWith('/connectify/messages')
 
   const at = (p) => (p === '/connectify' ? pathname === '/connectify' || pathname === '/connectify/' : pathname.startsWith(p))
   const meLink = `/connectify/u/${user.username || user._id}`
   const ctx = {
     openComposer : (opts = {}) => setComposer(opts),
     sendToChat : send.open,
+    // "Send": share a post in Connectify Messages (the sheet also offers Chatify)
+    sendInMessages : (post) => setSharing(post),
     version,
     bump : () => setVersion((v) => v + 1),
   }
@@ -83,7 +90,10 @@ const ConnectifyLayout = () => {
           <div className='flex items-center gap-2'>
             <AppSwitcher variant='row' className='hidden lg:flex' />
             <button onClick={() => navigate('/connectify/search')} title='Search' className='flex h-10 w-10 items-center justify-center rounded-full bg-cx-input hover:brightness-95 sm:hidden'><IoSearchOutline size={20} /></button>
-            <button onClick={() => navigate('/')} title='Messages (Chatify)' className='flex h-10 w-10 items-center justify-center rounded-full bg-cx-input hover:brightness-95'><IoChatbubbleEllipses size={20} /></button>
+            <button onClick={() => (inMessages ? navigate('/connectify/messages') : setMessages((v) => !v))} title='Messages' aria-label='Messages'
+              className={`relative flex h-10 w-10 items-center justify-center rounded-full hover:brightness-95 ${messages || inMessages ? 'bg-cx-blue/15 text-cx-blue' : 'bg-cx-input'}`}>
+              <IoChatbubbleEllipses size={20} /><Badge n={unread.cxDm} />
+            </button>
             <button onClick={() => navigate('/connectify/notifications')} title='Notifications' className={`relative hidden h-10 w-10 items-center justify-center rounded-full hover:brightness-95 md:flex ${at('/connectify/notifications') ? 'bg-cx-blue/15 text-cx-blue' : 'bg-cx-input'}`}>
               <IoNotifications size={20} /><Badge n={unread.connectify} />
             </button>
@@ -102,7 +112,7 @@ const ConnectifyLayout = () => {
 
         <div className='flex min-h-0 flex-1'>
           {/* left shortcuts (wide screens) */}
-          <aside className='hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 xl:block'>
+          <aside className={`hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 ${inMessages ? '' : 'xl:block'}`}>
             <SideLink icon={<Avatar width={36} height={36} name={user.name} imageUrl={user.profile_pic} />} label={user.name} onClick={() => navigate(meLink)} />
             {SHORTCUTS.filter((s) => s.label !== 'Search').map((s) => <SideLink key={s.path} icon={<s.Icon size={28} className={s.color} />} label={s.label} onClick={() => navigate(s.path)} active={at(s.path)} />)}
             <div className='mx-2 my-3 border-t border-cx-border' />
@@ -112,18 +122,18 @@ const ConnectifyLayout = () => {
             <p className='px-2 pt-4 text-xs text-cx-muted'>Connectify · part of Chatify © {new Date().getFullYear()}</p>
           </aside>
 
-          <main className='min-h-0 flex-1 overflow-y-auto' id='connectify-main'>
+          <main className={`min-h-0 flex-1 ${inMessages ? 'overflow-hidden bg-cx-card' : 'overflow-y-auto'}`} id='connectify-main'>
             <Outlet />
           </main>
 
           {/* contacts (wide screens): click to chat in Chats */}
-          <aside className='hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 lg:block'>
+          <aside className={`hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 ${inMessages ? '' : 'lg:block'}`}>
             <BirthdaysCard />
             <p className='px-2 pb-2 pt-2 text-[17px] font-semibold text-cx-muted'>Contacts</p>
             {contacts === null && <span className='mx-2 my-3 block h-5 w-5 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />}
             {contacts?.length === 0 && <p className='px-2 text-sm text-cx-muted'>Save contacts in Chatify to see them here.</p>}
             {contacts?.map((p) => (
-              <button key={p._id} onClick={() => navigate('/' + p._id)} title={`Message ${p.name}`} className='flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-cx-hover'>
+              <button key={p._id} onClick={() => navigate(`/connectify/messages/u/${p.username || p._id}`)} title={`Message ${p.name}`} className='flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-cx-hover'>
                 <span className='relative'>
                   <Avatar width={36} height={36} name={p.name} imageUrl={p.profile_pic} />
                   {onlineUser?.includes(String(p._id)) && <span className='absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-cx-bg bg-[#31a24c]' />}
@@ -138,6 +148,8 @@ const ConnectifyLayout = () => {
 
         {composer && <Composer {...composer} onClose={() => setComposer(null)} onPosted={() => { setComposer(null); setVersion((v) => v + 1) }} />}
         {send.element}
+        {sharing && <div className='cx-as-px'><ShareSheet post={sharing} onClose={() => setSharing(null)} onChats={send.open} /></div>}
+        {messages && !inMessages && <div className='cx-as-px'><MessagesPopup onClose={() => setMessages(false)} unreadCount={unread.cxDm} /></div>}
         {user._id && !user.username && <UsernamePrompt app='connectify' />}
       </div>
     </CxCtx.Provider>

@@ -191,7 +191,7 @@ const Comments = ({ post, onCount, autoFocus }) => {
 // onHidden: the post should leave the list (hidden, snoozed, unfollowed)
 export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = false, inGroup = false }) => {
   const navigate = useNavigate()
-  const { sendToChat, openComposer } = useConnectify()
+  const { sendToChat, sendInMessages, openComposer } = useConnectify()
   const [post, setPost] = useState(initial)
   useEffect(() => setPost(initial), [initial])
   const [showComments, setShowComments] = useState(expanded)
@@ -270,7 +270,7 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       <div className='mx-3 flex gap-1 border-t border-cx-border py-1'>
         <ReactButton mine={post.myReaction} onReact={react} />
         <button onClick={() => { setShowComments(true); setFocusComment((n) => n + 1) }} className='flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-[15px] font-semibold text-cx-muted hover:bg-cx-hover'><IoChatbubbleOutline size={20} />Comment</button>
-        <button onClick={() => sendToChat(target)} className='flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-[15px] font-semibold text-cx-muted hover:bg-cx-hover'><IoPaperPlaneOutline size={19} />Send</button>
+        <button onClick={() => sendInMessages(target)} className='flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-[15px] font-semibold text-cx-muted hover:bg-cx-hover'><IoPaperPlaneOutline size={19} />Send</button>
         <button onClick={() => setShareMenu(true)} className='flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-[15px] font-semibold text-cx-muted hover:bg-cx-hover'><IoShareSocialOutline size={19} />Share</button>
       </div>
 
@@ -301,6 +301,7 @@ export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = fal
       {shareMenu && (
         <ActionSheet tone='cx' title='Share' onClose={() => setShareMenu(false)} items={[
           { label : 'Share to Feed', hidden : !shareable, onClick : () => openComposer({ sharedPost : target }) },
+          { label : 'Send in Messages', onClick : () => sendInMessages(target) },
           { label : 'Send in Chatify', onClick : () => sendToChat(target) },
           { label : 'Copy link', onClick : () => copyPostLink(target) },
         ]} />

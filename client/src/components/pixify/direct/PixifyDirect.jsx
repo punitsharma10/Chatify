@@ -6,7 +6,7 @@ import { useOnVisible, useSocialUnread, shortAgo, api } from '../../../helpers/s
 import Avatar from '../../Avatar'
 import { Modal } from '../../social/common'
 import { notifyError } from '../../../helpers/toast'
-import { useThreadList, listPreview } from './directData'
+import { useThreadList, listPreview, dmApp, dmBase, dmRoot } from './directData'
 import { NewMessageModal, ThreadAvatar } from './DirectModals'
 
 // Pixify Direct: Instagram-style inbox. Left: conversations (or Requests); right: the open conversation.
@@ -91,27 +91,27 @@ const ThreadList = ({ folder, activeId, onNew }) => {
       <div className='flex h-[74px] shrink-0 items-center justify-between px-6 pt-3 max-md:h-[60px] max-md:px-4 max-md:pt-0'>
         {requests ? (
           <div className='flex items-center gap-3'>
-            <button onClick={() => navigate('/pixify/direct')} aria-label='Back'><IoChevronBack size={26} /></button>
+            <button onClick={() => navigate(`${dmBase()}`)} aria-label='Back'><IoChevronBack size={26} /></button>
             <h1 className='text-xl font-bold'>Message requests</h1>
           </div>
         ) : (
           <>
             <div className='flex items-center gap-3'>
-              <button onClick={() => navigate('/pixify')} aria-label='Back to Pixify' className='md:hidden'><IoChevronBack size={26} /></button>
-              <h1 className='truncate text-xl font-bold'>{user.username || user.name}</h1>
+              <button onClick={() => navigate(dmRoot())} aria-label='Back' className='md:hidden'><IoChevronBack size={26} /></button>
+              <h1 className='truncate text-xl font-bold'>{dmApp() === 'connectify' ? 'Chats' : user.username || user.name}</h1>
             </div>
             <button onClick={onNew} title='New message' aria-label='New message'><IoCreateOutline size={26} /></button>
           </>
         )}
       </div>
-      {!requests && <NotesRow />}
+      {!requests && dmApp() === 'pixify' && <NotesRow />}
       {requests ? (
         <p className='px-6 pb-3 text-[13px] text-px-muted max-md:px-4'>Open a chat to see who sent it. They won't know you've seen it until you accept.</p>
       ) : (
         <div className='flex items-center justify-between px-6 pb-2 pt-3 max-md:px-4'>
           <span className='font-bold'>Messages</span>
-          <button onClick={() => navigate('/pixify/direct/requests')} className='text-sm font-semibold text-px-muted hover:text-px-text'>
-            Requests{unread.dmRequests > 0 ? ` (${unread.dmRequests})` : ''}
+          <button onClick={() => navigate(`${dmBase()}/requests`)} className='text-sm font-semibold text-px-muted hover:text-px-text'>
+            Requests{(dmApp() === 'connectify' ? unread.cxDmRequests : unread.dmRequests) > 0 ? ` (${dmApp() === 'connectify' ? unread.cxDmRequests : unread.dmRequests})` : ''}
           </button>
         </div>
       )}
@@ -123,7 +123,7 @@ const ThreadList = ({ folder, activeId, onNew }) => {
         {!list.loading && !list.error && !list.threads.length && (
           <p className='px-6 py-10 text-center text-sm text-px-muted'>{requests ? 'No message requests.' : 'No messages yet.'}</p>
         )}
-        {list.threads.map((t) => <ThreadRow key={t._id} t={t} active={t._id === activeId} onClick={() => navigate(`/pixify/direct/t/${t._id}`, { state : { folder } })} />)}
+        {list.threads.map((t) => <ThreadRow key={t._id} t={t} active={t._id === activeId} onClick={() => navigate(`${dmBase()}/t/${t._id}`, { state : { folder } })} />)}
         <div ref={more} />
       </div>
     </div>
@@ -149,9 +149,9 @@ export const DirectOpenUser = () => {
   const navigate = useNavigate()
   useEffect(() => {
     let alive = true
-    api.get(`/dm/with/${encodeURIComponent(handle)}`)
-      .then((r) => alive && navigate(`/pixify/direct/t/${r.thread._id}`, { replace : true }))
-      .catch((e) => { if (alive) { notifyError(e.message); navigate('/pixify/direct', { replace : true }) } })
+    api.get(`/dm/with/${encodeURIComponent(handle)}?app=${dmApp()}`)
+      .then((r) => alive && navigate(`${dmBase()}/t/${r.thread._id}`, { replace : true }))
+      .catch((e) => { if (alive) { notifyError(e.message); navigate(`${dmBase()}`, { replace : true }) } })
     return () => { alive = false }
   }, [handle, navigate])
   return <div className='flex h-full items-center justify-center'><span className='h-8 w-8 animate-spin rounded-full border-2 border-px-border border-t-px-text' /></div>
@@ -162,10 +162,10 @@ export const useDirect = () => React.useContext(DirectCtx)
 
 const PixifyDirect = () => {
   const { pathname, state } = useLocation()
-  const open = useMatch('/pixify/direct/t/:threadId')
-  const opening = useMatch('/pixify/direct/u/:handle')
+  const open = useMatch(`${dmBase()}/t/:threadId`)
+  const opening = useMatch(`${dmBase()}/u/:handle`)
   const [newMessage, setNewMessage] = useState(false)
-  const folder = pathname.startsWith('/pixify/direct/requests') || (open && state?.folder === 'requests') ? 'requests' : 'inbox'
+  const folder = pathname.startsWith(`${dmBase()}/requests`) || (open && state?.folder === 'requests') ? 'requests' : 'inbox'
   const inThread = !!(open || opening)
 
   return (

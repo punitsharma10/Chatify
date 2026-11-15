@@ -210,7 +210,7 @@ export const ConnectifyProfile = () => {
               ) : (
                 <>
                   <FriendButton person={profile} initial={profile.friendStatus} onChange={() => load()} />
-                  <button onClick={() => navigate('/' + profile._id)} className='flex h-9 items-center gap-2 rounded-md bg-cx-blue px-3 font-semibold text-white'><IoChatbubbleEllipses />Message</button>
+                  <button onClick={() => navigate(`/connectify/messages/u/${profile.username || profile._id}`)} className='flex h-9 items-center gap-2 rounded-md bg-cx-blue px-3 font-semibold text-white'><IoChatbubbleEllipses />Message</button>
                   {profile.friendStatus === 'friends' && (
                     <button onClick={() => tool(`/pokes/${profile._id}`, {}, `You poked ${profile.name.split(' ')[0]}`)} disabled={profile.pokedByMe} title={profile.pokedByMe ? 'Poked' : 'Poke'} className='flex h-9 items-center gap-2 rounded-md bg-cx-input px-3 font-semibold hover:brightness-95 disabled:opacity-60'><IoHandLeft />{profile.pokedMe && !profile.pokedByMe ? 'Poke back' : profile.pokedByMe ? 'Poked' : 'Poke'}</button>
                   )}

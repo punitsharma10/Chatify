@@ -198,6 +198,28 @@ const AUD = 'https://res.cloudinary.com/demo/video/upload/v1/voice.webm'
   const sug = await get('/dm/suggested', A.token)
   check('suggested recent chats and people you follow', sug.status === 200 && sug.body.threads.length >= 2)
 
+  // ---------- Connectify Messages: its own inbox; friends -> inbox, others -> requests ----------
+  await post('/friends/' + B.id, A.token, { action: 'request' }); await post('/friends/' + A.id, B.token, { action: 'accept' })
+  const cxAB = (await get('/dm/with/' + B.handle + '?app=connectify', A.token)).body.thread
+  check('Connectify chat is separate from Pixify', cxAB.app === 'connectify' && cxAB._id !== tAB)
+  check('opened again: same Connectify chat', (await get('/dm/with/' + A.id + '?app=connectify', B.token)).body.thread._id === cxAB._id)
+  await post(`/dm/threads/${cxAB._id}/messages`, A.token, { text: 'Hi from Connectify' })
+  const bCx = (await get('/dm/threads?app=connectify', B.token)).body.threads
+  check("friend's message in the Connectify inbox", bCx.some((t) => t._id === cxAB._id && t.status === 'inbox' && t.unread))
+  check('not in the Pixify inbox', !(await get('/dm/threads', B.token)).body.threads.some((t) => t._id === cxAB._id))
+  check('Pixify chats not in Connectify', !bCx.some((t) => t._id === tAB))
+  const counts = (await get('/notifications/unread', B.token)).body
+  check('Connectify unread counted on its own', counts.cxDm === 1)
+  const cxDA = (await get('/dm/with/' + A.handle + '?app=connectify', D.token)).body.thread // D follows nobody and isn't A's friend
+  await post(`/dm/threads/${cxDA._id}/messages`, D.token, { text: 'hello stranger' })
+  check('non-friend goes to Connectify requests', (await get('/dm/threads?app=connectify&folder=requests', A.token)).body.threads.some((t) => t._id === cxDA._id))
+  check('Connectify request count', (await get('/dm/unread?app=connectify', A.token)).body.requests >= 1)
+  const cxGroup = (await post('/dm/threads', A.token, { app: 'connectify', userIds: [B.id, C.id], name: 'Family' })).body.thread
+  check('Connectify group', cxGroup.app === 'connectify' && cxGroup.isGroup && (await get('/dm/threads?app=connectify', B.token)).body.threads.some((t) => t._id === cxGroup._id))
+  const cxPost = (await post('/posts', A.token, { app: 'connectify', text: 'Weekend!', audience: 'friends' })).body.post
+  check('share a Connectify post in Connectify Messages', (await post('/dm/share', A.token, { app: 'connectify', postId: cxPost._id, userIds: [B.id] })).body.sent === 1)
+  check('suggested = friends', (await get('/dm/suggested?app=connectify', A.token)).status === 200)
+
   sa.disconnect(); sb.disconnect()
   await sleep(100)
   console.log(results.join('\n'))

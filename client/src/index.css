@@ -95,6 +95,18 @@
   }
 }
 
+/* Connectify Messages reuse the Pixify Direct screens: inside .cx-as-px the Pixify colours become Connectify's
+   (light and dark follow automatically, because the Connectify colours already switch with the theme). */
+.cx-as-px {
+  --px-bg: var(--cx-card);
+  --px-text: var(--cx-text);
+  --px-muted: var(--cx-muted);
+  --px-border: var(--cx-border);
+  --px-hover: var(--cx-hover);
+  --px-raised: var(--cx-input);
+  --px-blue: var(--cx-blue);
+}
+
 /* Reusable component classes. Kept inside the components layer so responsive
    utilities placed next to them (md:hidden, w-full, ...) can still override them. */
 @layer components {

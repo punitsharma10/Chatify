@@ -1,7 +1,8 @@
 const mongoose = require('mongoose')
 const ObjectId = mongoose.Schema.ObjectId
 
-// Pixify Direct (Instagram-style messages). A separate inbox from Chats: its own threads and messages.
+// Messages inside Pixify (Instagram-style Direct) and Connectify (Facebook-style Messenger). Each app has its own inbox,
+// separate from each other and from Chatify: `app` says which one a conversation belongs to (missing = Pixify).
 
 // one person in a thread, with their own view of it
 const memberSchema = new mongoose.Schema({
@@ -17,6 +18,7 @@ const memberSchema = new mongoose.Schema({
 }, { _id : false })
 
 const threadSchema = new mongoose.Schema({
+    app : { type : String, enum : ['pixify', 'connectify'], default : 'pixify' },
     isGroup : { type : Boolean, default : false },
     // one-to-one threads: the two ids sorted and joined, so each pair has one thread
     pairKey : { type : String },
@@ -35,6 +37,7 @@ const threadSchema = new mongoose.Schema({
 
 threadSchema.index({ pairKey : 1 }, { unique : true, partialFilterExpression : { pairKey : { $type : 'string' } } })
 threadSchema.index({ 'members.userId' : 1, lastMessageAt : -1 })
+threadSchema.index({ app : 1, 'members.userId' : 1, lastMessageAt : -1 })
 
 const KINDS = ['text', 'media', 'voice', 'post', 'profile', 'system']
 
