@@ -66,7 +66,7 @@ const Reel = ({ post : initial }) => {
             {post.myReaction ? <IoHeart size={28} className='text-[#ff3040]' /> : <IoHeartOutline size={28} />}{compact(post.reactionCount)}
           </button>
           {!post.commentsOff && <button onClick={() => navigate(`/pixify/p/${post._id}`)} className='flex flex-col items-center text-xs' title='Comments'><IoChatbubbleOutline size={27} className='-scale-x-100' />{compact(post.commentCount)}</button>}
-          <button onClick={() => sendToChat(post)} title='Send to a chat'><IoPaperPlaneOutline size={26} /></button>
+          <button onClick={() => sendToChat(post)} title='Share'><IoPaperPlaneOutline size={26} /></button>
         </div>
       </div>
     </section>

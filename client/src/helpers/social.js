@@ -139,22 +139,24 @@ export const useOnVisible = (onVisible, enabled = true) => {
 
 // unread Pixify / Connectify notifications, kept live through the socket
 // one shared counter for every screen that shows a badge (app switchers, nav bars): fetched once, kept live
-const unreadStore = { counts : { pixify : 0, connectify : 0, friendRequests : 0 }, listeners : new Set(), socket : null, timer : null }
+const unreadStore = { counts : { pixify : 0, connectify : 0, friendRequests : 0, dm : 0, dmRequests : 0 }, listeners : new Set(), socket : null, timer : null }
 const refreshUnread = () => {
   clearTimeout(unreadStore.timer)
   // several events in a row (e.g. many likes) = one request
   unreadStore.timer = setTimeout(() => {
     api.get('/notifications/unread').then((c) => {
-      unreadStore.counts = { pixify : c.pixify || 0, connectify : c.connectify || 0, friendRequests : c.friendRequests || 0 }
+      unreadStore.counts = { pixify : c.pixify || 0, connectify : c.connectify || 0, friendRequests : c.friendRequests || 0, dm : c.dm || 0, dmRequests : c.dmRequests || 0 }
       unreadStore.listeners.forEach((fn) => fn(unreadStore.counts))
     }).catch(() => {})
   }, 150)
 }
 const watchUnread = (socket) => {
   if (!socket || unreadStore.socket === socket) return
-  if (unreadStore.socket) { unreadStore.socket.off('social-notification', refreshUnread); unreadStore.socket.off('connect', refreshUnread) }
+  if (unreadStore.socket) { unreadStore.socket.off('social-notification', refreshUnread); unreadStore.socket.off('px-dm', refreshUnread); unreadStore.socket.off('connect', refreshUnread) }
   unreadStore.socket = socket
   socket.on('social-notification', refreshUnread)
+  // Pixify Direct: new messages, reads, accepted requests
+  socket.on('px-dm', refreshUnread)
   socket.on('connect', refreshUnread)
   refreshUnread()
 }

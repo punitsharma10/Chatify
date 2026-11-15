@@ -107,7 +107,7 @@ const PixifyProfile = () => {
             ) : (
               <>
                 <FollowButton person={profile} initial={profile.followStatus} onChange={() => load()} />
-                <button onClick={() => navigate('/' + profile._id)} className='h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>Message</button>
+                <button onClick={() => navigate(`/pixify/direct/u/${profile.username || profile._id}`)} className='h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>Message</button>
                 <button onClick={() => setMenu(true)} className='h-8 px-1 text-xl leading-none' title='Options'>⋯</button>
               </>
             )}

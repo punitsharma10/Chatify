@@ -71,7 +71,7 @@ export const PostMenu = ({ actions, onClose, onEdit, goToPost = true }) => {
       { label : post.commentsOff ? 'Turn on commenting' : 'Turn off commenting', hidden : !post.mine, onClick : () => update({ commentsOff : !post.commentsOff }) },
       { label : 'Unfollow', danger : true, hidden : post.mine || unfollowed, onClick : async () => { try { await api.post(`/follow/${post.author._id}`, { follow : false }); setUnfollowed(true); notify(`Unfollowed ${handleOf(post.author)}`) } catch (e) { notifyError(e.message) } } },
       { label : 'Go to post', hidden : !goToPost, onClick : () => navigate(`/pixify/p/${post._id}`) },
-      { label : 'Send to chat', onClick : () => sendToChat(post) },
+      { label : 'Share to...', onClick : () => sendToChat(post) },
       { label : 'Copy link', onClick : () => copyPostLink(post) },
       { label : 'About this account', hidden : post.mine, onClick : () => navigate(userLink(post.author)) },
     ]} />
@@ -103,7 +103,7 @@ export const ActionBar = ({ actions, onComment, size = 26 }) => {
         {post.myReaction ? <IoHeart size={size} className='animate-[likepop_.3s_ease-out] text-[#ff3040]' /> : <IoHeartOutline size={size} className='hover:opacity-60' />}
       </button>
       {!post.commentsOff && <button onClick={onComment} title='Comment' className='hover:opacity-60'><IoChatbubbleOutline size={size - 1} className='-scale-x-100' /></button>}
-      <button onClick={() => sendToChat(post)} title='Send to a chat' className='hover:opacity-60'><IoPaperPlaneOutline size={size - 2} /></button>
+      <button onClick={() => sendToChat(post)} title='Share' className='hover:opacity-60'><IoPaperPlaneOutline size={size - 2} /></button>
       <button onClick={save} title={post.saved ? 'Remove from saved' : 'Save'} className='ml-auto hover:opacity-60'>{post.saved ? <IoBookmark size={size - 2} /> : <IoBookmarkOutline size={size - 2} />}</button>
     </div>
   )

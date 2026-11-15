@@ -374,12 +374,14 @@ const markRead = handle(async (req) => {
 })
 
 const unread = handle(async (req) => {
-    const [pixify, connectify, friendReqs] = await Promise.all([
+    const [pixify, connectify, friendReqs, dm] = await Promise.all([
         NotificationModel.countDocuments({ user : req.user._id, app : 'pixify', read : false }),
         NotificationModel.countDocuments({ user : req.user._id, app : 'connectify', read : false }),
-        FriendshipModel.countDocuments({ to : req.user._id, status : 'pending' })
+        FriendshipModel.countDocuments({ to : req.user._id, status : 'pending' }),
+        require('./dm.controller').unreadCounts(req.user._id)
     ])
-    return { pixify, connectify, friendRequests : friendReqs }
+    // dm: Pixify Direct conversations with new messages / waiting message requests
+    return { pixify, connectify, friendRequests : friendReqs, dm : dm.inbox, dmRequests : dm.requests }
 })
 
 module.exports = {

@@ -45,6 +45,30 @@ router.get('/friends/requests', U.friendRequests)
 router.get('/friends/suggestions', U.friendSuggestions)
 router.post('/friends/:id', U.friendAction)
 
+// Pixify Direct (Instagram-style messages, separate from Chats)
+const D = require('../controllers/dm.controller')
+router.get('/dm/threads', D.listThreads)            // ?folder=inbox|requests&before=
+router.post('/dm/threads', D.createThread)          // { userIds, name, group }
+router.get('/dm/unread', D.unread)
+router.get('/dm/suggested', D.suggested)
+router.get('/dm/with/:handle', D.withUser)
+router.post('/dm/share', D.share)
+router.get('/dm/threads/:id', D.getThread)
+router.patch('/dm/threads/:id', D.updateGroup)
+router.get('/dm/threads/:id/messages', D.listMessages)
+router.post('/dm/threads/:id/messages', D.sendMessage)
+router.post('/dm/threads/:id/read', D.markRead)
+router.post('/dm/threads/:id/accept', D.accept)
+router.post('/dm/threads/:id/delete', D.hide)
+router.post('/dm/threads/:id/mute', D.mute)
+router.post('/dm/threads/:id/members', D.addMembers)
+router.delete('/dm/threads/:id/members/:userId', D.removeMember)
+router.post('/dm/threads/:id/admins/:userId', D.setAdmin)
+router.post('/dm/threads/:id/leave', D.leave)
+router.patch('/dm/messages/:id', D.editMessage)
+router.delete('/dm/messages/:id', D.unsend)
+router.post('/dm/messages/:id/react', D.react)
+
 // notifications
 router.get('/notifications', U.notifications)   // ?app=
 router.get('/notifications/unread', U.unread)

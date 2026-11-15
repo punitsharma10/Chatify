@@ -16,4 +16,14 @@ module.exports = async (userId) => {
         FriendshipModel.deleteMany({ $or : [{ from : userId }, { to : userId }] }),
         NotificationModel.deleteMany({ $or : [{ user : userId }, { actor : userId }, { post : { $in : posts } }] })
     ])
+    // Pixify Direct: their one-to-one threads go; they leave groups (an empty group is removed)
+    const { DmThreadModel, DmMessageModel } = require('../models/dm.model')
+    const pairs = (await DmThreadModel.find({ isGroup : false, 'members.userId' : userId }).select('_id').lean()).map((t) => t._id)
+    await Promise.all([DmThreadModel.deleteMany({ _id : { $in : pairs } }), DmMessageModel.deleteMany({ $or : [{ thread : { $in : pairs } }, { from : userId }] })])
+    for (const g of await DmThreadModel.find({ isGroup : true, 'members.userId' : userId }).lean()) {
+        const rest = g.members.filter((m) => String(m.userId) !== String(userId))
+        if (!rest.length) { await DmThreadModel.deleteOne({ _id : g._id }); await DmMessageModel.deleteMany({ thread : g._id }); continue }
+        if (!rest.some((m) => m.role === 'admin')) rest[0].role = 'admin'
+        await DmThreadModel.updateOne({ _id : g._id }, { $set : { members : rest } })
+    }
 }
