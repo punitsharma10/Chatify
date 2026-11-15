@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSelector } from 'react-redux';
 import DefaultAvatar from './DefaultAvatar';
 import { HiUserGroup } from 'react-icons/hi';
@@ -14,6 +14,9 @@ const colorFor = (name = '') => {
 
 const Avatar = ({ userId, name, imageUrl, width, height, group = false }) => {
   const onlineUser = useSelector(state => state?.user?.onlineUser)
+  // a photo that fails to load (deleted / bad link) falls back to initials
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [imageUrl])
 
   // "~Rahul" (not a saved contact) -> "Rahul"; a phone number has no initials, so it gets the default picture
   const cleanName = (name || '').replace(/^[~\s]+/, '')
@@ -29,10 +32,11 @@ const Avatar = ({ userId, name, imageUrl, width, height, group = false }) => {
 
   return (
     <div className='relative shrink-0 rounded-full' style={{ width: width + "px", height: height + "px" }}>
-      {imageUrl ? (
+      {imageUrl && !broken ? (
         <img
           src={imageUrl}
           alt={name}
+          onError={() => setBroken(true)}
           className='h-full w-full rounded-full object-cover'
         />
       ) : group ? (

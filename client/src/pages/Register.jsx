@@ -11,6 +11,7 @@ import DefaultAvatar from "../components/DefaultAvatar";
 import EmailOtpStep from "../components/EmailOtpStep";
 import PasswordFields, { passwordProblem } from "../components/PasswordFields";
 import { formatPhone } from "../helpers/phone";
+import UsernameField, { normalizeUsername } from "../components/apps/UsernameField";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -25,6 +26,9 @@ const Register = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [tried, setTried] = useState(false);
+  // optional @username (used in Chats search, Pixify and Connectify); can also be chosen later
+  const [username, setUsername] = useState("");
+  const [usernameState, setUsernameState] = useState("idle");
   const navigate = useNavigate();
   const dispatch = useDispatch();
 
@@ -57,6 +61,7 @@ const Register = () => {
     const problem = passwordProblem(password, confirm) || (password !== confirm ? "Passwords don't match." : "");
     if (!data.name.trim()) return setError("Please enter your name.");
     if (problem) return setError(problem);
+    if (username && usernameState !== "ok") return setError(usernameState === "checking" ? "Still checking your username…" : "Choose an available username, or leave it empty.");
 
     setSubmitting(true);
     try {
@@ -64,6 +69,7 @@ const Register = () => {
         name: data.name,
         [verified.channel === "sms" ? "phone" : "email"]: verified.target,
         profile_pic: data.profile_pic,
+        ...(username ? { username: normalizeUsername(username) } : {}),
         password,
         confirmPassword: confirm,
         verifyToken: verified.token,
@@ -165,6 +171,16 @@ const Register = () => {
                   onChange={(e) => setData((d) => ({ ...d, name: e.target.value }))}
                   required
                 />
+              </div>
+
+              <div>
+                <UsernameField
+                  label="Username (optional)"
+                  value={username}
+                  nameHint={data.name}
+                  onChange={(v, st) => { setUsername(v); setUsernameState(st); }}
+                />
+                <p className="mt-1 text-xs text-wa-muted">Your @name in Pixify and Connectify. You can also choose it later.</p>
               </div>
 
               <PasswordFields password={password} confirm={confirm} onPassword={setPassword} onConfirm={setConfirm} showErrors={tried} />

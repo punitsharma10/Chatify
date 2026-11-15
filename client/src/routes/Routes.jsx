@@ -8,6 +8,17 @@ import Message from "../components/Message";
 import AuthLayout from "../layout/AuthLayout";
 import ForgotPassword from "../pages/ForgetPassword";
 import JoinGroup from "../components/JoinGroup";
+import PixifyLayout from "../components/pixify/PixifyLayout";
+import PixifyHome from "../components/pixify/PixifyHome";
+import PixifyProfile, { PixifyEditProfile } from "../components/pixify/PixifyProfile";
+import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage, PixifyTag, PixifyArchive, PixifyActivity, PixifyPeopleList } from "../components/pixify/PixifyDiscover";
+import PixifyNotifications from "../components/pixify/PixifyNotifications";
+import PixifyDirect, { DirectEmpty, DirectOpenUser } from "../components/pixify/direct/PixifyDirect";
+import DirectThread from "../components/pixify/direct/DirectThread";
+import ConnectifyLayout from "../components/connectify/ConnectifyLayout";
+import { ConnectifyGroups, ConnectifyGroup, ConnectifyEvents, ConnectifyEvent, ConnectifyMarket, ConnectifyListing, ConnectifyWatch, ConnectifyMemories, ConnectifySaved, ConnectifyTag, ConnectifyBirthdays, ConnectifyPokes } from "../components/connectify/ConnectifyMore";
+import ConnectifyHome from "../components/connectify/ConnectifyHome";
+import { ConnectifyProfile, ConnectifyFriends, ConnectifyNotifications, ConnectifySearch, ConnectifyPostPage, ConnectifyMenu } from "../components/connectify/ConnectifyPages";
 
 const router = createBrowserRouter([
 {
@@ -34,6 +45,72 @@ const router = createBrowserRouter([
             path : "/",
             element : <Home/>,
             children : [
+                // the other two apps share the same login and connection (see pages/Home.jsx)
+                {
+                    path : 'pixify',
+                    element : <PixifyLayout/>,
+                    children : [
+                        { index : true, element : <PixifyHome/> },
+                        { path : 'explore', element : <PixifyExplore/> },
+                        { path : 'reels', element : <PixifyReels/> },
+                        { path : 'search', element : <PixifySearch/> },
+                        { path : 'notifications', element : <PixifyNotifications/> },
+                        { path : 'edit', element : <PixifyEditProfile/> },
+                        { path : 'p/:postId', element : <PixifyPostPage/> },
+                        { path : 'u/:handle', element : <PixifyProfile/> },
+                        { path : 'tags/:tag', element : <PixifyTag/> },
+                        { path : 'archive', element : <PixifyArchive/> },
+                        { path : 'activity', element : <PixifyActivity/> },
+                        { path : 'people/:list', element : <PixifyPeopleList/> },
+                        // Pixify Direct: Instagram-style messages (separate from Chats)
+                        {
+                            path : 'direct',
+                            element : <PixifyDirect/>,
+                            children : [
+                                { index : true, element : <DirectEmpty/> },
+                                { path : 'requests', element : <DirectEmpty/> },
+                                { path : 't/:threadId', element : <DirectThread/> },
+                                { path : 'u/:handle', element : <DirectOpenUser/> },
+                            ]
+                        },
+                    ]
+                },
+                {
+                    path : 'connectify',
+                    element : <ConnectifyLayout/>,
+                    children : [
+                        { index : true, element : <ConnectifyHome/> },
+                        { path : 'friends', element : <ConnectifyFriends/> },
+                        { path : 'notifications', element : <ConnectifyNotifications/> },
+                        { path : 'search', element : <ConnectifySearch/> },
+                        { path : 'menu', element : <ConnectifyMenu/> },
+                        { path : 'p/:postId', element : <ConnectifyPostPage/> },
+                        { path : 'u/:handle', element : <ConnectifyProfile/> },
+                        { path : 'groups', element : <ConnectifyGroups/> },
+                        { path : 'groups/:groupId', element : <ConnectifyGroup/> },
+                        { path : 'events', element : <ConnectifyEvents/> },
+                        { path : 'events/:eventId', element : <ConnectifyEvent/> },
+                        { path : 'marketplace', element : <ConnectifyMarket/> },
+                        { path : 'marketplace/:listingId', element : <ConnectifyListing/> },
+                        { path : 'watch', element : <ConnectifyWatch/> },
+                        { path : 'memories', element : <ConnectifyMemories/> },
+                        { path : 'saved', element : <ConnectifySaved/> },
+                        { path : 'tags/:tag', element : <ConnectifyTag/> },
+                        { path : 'birthdays', element : <ConnectifyBirthdays/> },
+                        { path : 'pokes', element : <ConnectifyPokes/> },
+                        // Connectify Messages: its own inbox (same screens as Pixify Direct, Connectify colours)
+                        {
+                            path : 'messages',
+                            element : <div className='cx-as-px h-full'><PixifyDirect/></div>,
+                            children : [
+                                { index : true, element : <DirectEmpty/> },
+                                { path : 'requests', element : <DirectEmpty/> },
+                                { path : 't/:threadId', element : <DirectThread/> },
+                                { path : 'u/:handle', element : <DirectOpenUser/> },
+                            ]
+                        },
+                    ]
+                },
                 {
                     path : ':userId',
                     element : <Message/>

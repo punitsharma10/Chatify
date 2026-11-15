@@ -15,6 +15,16 @@ const statusSchema = new mongoose.Schema({
     // who may see it, resolved from the owner's status privacy when it was posted (like WhatsApp,
     // a privacy change only affects updates posted afterwards)
     audience : [{ type : ObjectId, ref : 'User' }],
+    // which apps show it: 'chats' (Status), 'pixify' and/or 'connectify' (stories). One record, shown in each app.
+    // Missing on updates posted before Pixify/Connectify existed, which means Chats only.
+    apps : { type : [{ type : String, enum : ['chats', 'pixify', 'connectify'] }], default : undefined },
+    // who sees it in Pixify (my followers) / Connectify (my friends), resolved when posted like `audience`.
+    // shareAudience = everyone in either list. These stories are never end-to-end encrypted.
+    appAudience : {
+        pixify : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+        connectify : { type : [{ type : ObjectId, ref : 'User' }], default : undefined }
+    },
+    shareAudience : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
     // hidden = the viewer has read receipts off: counts as seen for them, but isn't shown to the owner
     viewers : [{ userId : { type : ObjectId, ref : 'User' }, at : Date, hidden : Boolean, _id : false }],
     expiresAt : { type : Date, required : true }
@@ -25,5 +35,9 @@ const statusSchema = new mongoose.Schema({
 statusSchema.index({ expiresAt : 1 }, { expireAfterSeconds : 0 })
 statusSchema.index({ userId : 1, createdAt : -1 })
 statusSchema.index({ audience : 1, expiresAt : 1 })
+// (MongoDB can't index two arrays together, so `apps` is filtered after this index)
+statusSchema.index({ shareAudience : 1, expiresAt : 1 })
+statusSchema.index({ 'appAudience.pixify' : 1, expiresAt : 1 })
+statusSchema.index({ 'appAudience.connectify' : 1, expiresAt : 1 })
 
 module.exports = mongoose.model('Status', statusSchema)

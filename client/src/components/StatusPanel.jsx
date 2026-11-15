@@ -14,6 +14,13 @@ import { notify, notifyError } from '../helpers/toast'
 import { usePeopleNames } from '../helpers/contacts'
 import { thumbUrl } from '../helpers/media'
 import { canEncryptStatus } from '../helpers/e2ee'
+import { APPS, appName, isSharedOutsideChats } from '../helpers/apps'
+import { AppMark } from './apps/AppLogos'
+
+// "Status posted" / "Shared to Chats, Pixify and Connectify"
+const postedLabel = (apps) => (apps.length === 1 && apps[0] === 'chats'
+  ? 'Status posted'
+  : `Shared to ${apps.map(appName).join(', ').replace(/, ([^,]*)$/, ' and $1')}`)
 
 export const STATUS_BACKGROUNDS = ['#00a884', '#5796ff', '#7e57c2', '#ff8a65', '#e53935', '#c0ca33', '#26a69a', '#8d6e63', '#54656f', '#ec407a']
 export const STATUS_FONTS = [
@@ -52,7 +59,7 @@ export const StatusRing = ({ statuses, size = 48, children }) => {
   )
 }
 
-const StatusThumb = ({ status, size }) => {
+export const StatusThumb = ({ status, size }) => {
   if (status.kind === 'text') {
     return (
       <span className='flex h-full w-full items-center justify-center overflow-hidden rounded-full p-1 text-center text-[9px] leading-tight text-white' style={{ backgroundColor : status.background, width : size, height : size, ...STATUS_FONTS[status.font || 0] }}>
@@ -350,9 +357,16 @@ export const StatusViewer = ({ socket, list, group : startGroup, index : startIn
 
       <footer className='mx-auto w-full max-w-[560px] px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2'>
         {mine ? (
-          <button onClick={showViewers} className='mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm hover:bg-white/10'>
-            <IoEyeOutline size={18} /> {status.viewCount || 0} view{status.viewCount === 1 ? '' : 's'}
-          </button>
+          <div className='flex flex-col items-center gap-1'>
+            <button onClick={showViewers} className='flex items-center gap-2 rounded-full px-4 py-2 text-sm hover:bg-white/10'>
+              <IoEyeOutline size={18} /> {status.viewCount || 0} view{status.viewCount === 1 ? '' : 's'}
+            </button>
+            {(status.apps || []).length > 0 && (
+              <p className='flex items-center gap-1.5 text-xs text-white/70'>
+                Shared to {status.apps.map((a) => <span key={a} className='flex items-center gap-1'><AppMark app={a} size={14} />{appName(a)}</span>)}
+              </p>
+            )}
+          </div>
         ) : (
           <div className='flex items-center gap-2'>
             <input
@@ -399,19 +413,51 @@ export const StatusViewer = ({ socket, list, group : startGroup, index : startIn
 
 /* ---------------- composers ---------------- */
 
-const TextComposer = ({ socket, onClose, onPosted }) => {
+// "Share to: Chats · Pixify · Connectify". One story, shown in every app that's ticked (at least one).
+export const ShareToApps = ({ apps, onChange, disabled = false }) => {
+  const toggle = (id) => {
+    const next = apps.includes(id) ? apps.filter((a) => a !== id) : [...apps, id]
+    if (next.length) onChange(APPS.map((a) => a.id).filter((a) => next.includes(a)))
+  }
+  return (
+    <div className='flex flex-col items-center gap-1.5'>
+      <div role='group' aria-label='Share to' className='flex flex-wrap items-center justify-center gap-2'>
+        <span className='text-xs font-medium uppercase tracking-wide text-white/80'>Share to</span>
+        {APPS.map((a) => {
+          const on = apps.includes(a.id)
+          return (
+            <button key={a.id} type='button' disabled={disabled} onClick={() => toggle(a.id)} aria-pressed={on}
+              className={`flex h-9 items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-[13px] font-medium transition ${on ? 'bg-white text-[#111b21] shadow' : 'bg-black/25 text-white/85 hover:bg-black/35'} disabled:opacity-60`}>
+              <AppMark app={a.id} size={24} />
+              {a.name}
+              <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${on ? 'border-[#00a884] bg-[#00a884] text-white' : 'border-white/70'}`}>{on ? '✓' : ''}</span>
+            </button>
+          )
+        })}
+      </div>
+      {isSharedOutsideChats(apps) && (
+        <p className='max-w-md text-center text-[11.5px] leading-4 text-white/80'>
+          🔓 Updates shared to {apps.filter((a) => a !== 'chats').map(appName).join(' and ')} aren't end-to-end encrypted.
+        </p>
+      )}
+    </div>
+  )
+}
+
+export const TextComposer = ({ socket, onClose, onPosted, defaultApps = ['chats'] }) => {
   const [text, setText] = useState('')
   const [bg, setBg] = useState(() => STATUS_BACKGROUNDS[Math.floor(Math.random() * STATUS_BACKGROUNDS.length)])
   const [font, setFont] = useState(0)
   const [sending, setSending] = useState(false)
+  const [apps, setApps] = useState(defaultApps)
 
   const post = async () => {
     if (!text.trim()) return
     setSending(true)
-    const res = await socketCall(socket, 'status-post', { kind : 'text', text, background : bg, font })
+    const res = await socketCall(socket, 'status-post', { kind : 'text', text, background : bg, font, apps })
     setSending(false)
     if (!res.ok) return notifyError(res.error)
-    notify('Status posted')
+    notify(postedLabel(apps))
     onPosted?.()
     onClose()
   }
@@ -438,6 +484,7 @@ const TextComposer = ({ socket, onClose, onPosted }) => {
           style={STATUS_FONTS[font]}
         />
       </div>
+      <div className='px-4 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={sending} /></div>
       <footer className='flex items-center justify-between px-4 pb-[max(1rem,env(safe-area-inset-bottom))]'>
         <span className='text-xs text-white/80'>{text.length}/700</span>
         <button onClick={post} disabled={!text.trim() || sending} className='flex h-14 w-14 items-center justify-center rounded-full bg-wa-green text-white shadow-menu disabled:opacity-60' title='Post status'><IoMdSend size={24} /></button>
@@ -446,17 +493,20 @@ const TextComposer = ({ socket, onClose, onPosted }) => {
   )
 }
 
-const MediaStatusComposer = ({ socket, item, onClose, onPosted }) => {
+export const MediaStatusComposer = ({ socket, item, onClose, onPosted, defaultApps = ['chats'] }) => {
   const [caption, setCaption] = useState('')
   const [progress, setProgress] = useState(null)
+  const [apps, setApps] = useState(defaultApps)
 
   const post = async () => {
     setProgress(0)
     try {
-      const up = await uploadFile(item.file, { onProgress : setProgress, encrypt : await canEncryptStatus() })
-      const res = await socketCall(socket, 'status-post', { kind : item.kind, mediaUrl : up.url, caption })
+      // a photo shown in Pixify / Connectify is uploaded as-is; Chats-only updates are encrypted when everyone can decrypt
+      const encrypt = isSharedOutsideChats(apps) ? false : await canEncryptStatus()
+      const up = await uploadFile(item.file, { onProgress : setProgress, encrypt })
+      const res = await socketCall(socket, 'status-post', { kind : item.kind, mediaUrl : up.url, caption, apps })
       if (!res.ok) throw new Error(res.error)
-      notify('Status posted')
+      notify(postedLabel(apps))
       onPosted?.()
       onClose()
     } catch (error) {
@@ -473,6 +523,7 @@ const MediaStatusComposer = ({ socket, item, onClose, onPosted }) => {
       <div className='flex min-h-0 flex-1 items-center justify-center p-4'>
         {item.kind === 'image' ? <img src={item.url} alt='' className='max-h-full max-w-full rounded object-contain' /> : <video src={item.url} controls playsInline className='max-h-full max-w-full' />}
       </div>
+      <div className='px-3 pb-3'><ShareToApps apps={apps} onChange={setApps} disabled={progress !== null} /></div>
       <footer className='mx-auto flex w-full max-w-xl items-center gap-2 px-3 pb-[max(1rem,env(safe-area-inset-bottom))]'>
         <input value={caption} onChange={(e) => setCaption(e.target.value)} maxLength={700} placeholder='Add a caption' className='h-12 min-w-0 flex-1 rounded-full bg-white/15 px-4 text-[15px] outline-none placeholder:text-white/60' onKeyDown={(e) => e.key === 'Enter' && progress === null && post()} />
         <button onClick={post} disabled={progress !== null} className='flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-wa-green text-sm text-white disabled:opacity-80' title='Post status'>

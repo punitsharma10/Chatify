@@ -19,6 +19,8 @@ import { matchShortcut } from '../helpers/shortcuts'
 import { clearDrafts } from '../helpers/drafts'
 import { notify, notifyError, notifyAction } from '../helpers/toast'
 import { installDecryptor, startE2EE, shareHistoryWith, requestHistory, setE2EEPrefs, clearLocalData } from '../helpers/e2ee'
+import AppSwitcher from '../components/apps/AppSwitcher'
+import { appFromPath, appName } from '../helpers/apps'
 
 // the user id inside the login token (available before the profile has loaded)
 const tokenUserId = (token) => {
@@ -277,15 +279,28 @@ const Home = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // unread chats in the tab title, e.g. "(3) Chatify"
+  // which of the three apps is open: Chats, Pixify or Connectify (same login and connection)
+  const app = appFromPath(location.pathname)
+
+  // unread chats in the tab title, e.g. "(3) Chatify" / "(3) Pixify"
   useEffect(() => {
     const unread = conversations.filter((c) => !(c.muted && (!c.mutedUntil || new Date(c.mutedUntil) > new Date())) && !c.request && !c.locked && (c.unseenMsg > 0 || c.markedUnread)).length
-    document.title = unread ? `(${unread}) Chatify` : 'Chatify'
+    const title = app === 'chats' ? 'Chatify' : appName(app)
+    document.title = unread ? `(${unread}) ${title}` : title
     setFaviconBadge(unread)
     return () => { document.title = 'Chatify'; setFaviconBadge(0) }
-  }, [conversations])
+  }, [conversations, app])
 
   const basePath = location.pathname === '/'
+
+  // Pixify and Connectify take the whole screen; calls still ring there
+  if (app !== 'chats') {
+    return (
+      <CallProvider>
+        <Outlet />
+      </CallProvider>
+    )
+  }
 
   return (
     <CallProvider>
@@ -295,9 +310,13 @@ const Home = () => {
 
       {/* phone: one pane at a time | tablet+: chat list + conversation side by side | xl: framed window */}
       <div className='relative mx-auto h-full xl:px-3 xl:py-3'>
-        <div className='grid h-full overflow-hidden bg-wa-surface md:grid-cols-[350px,1fr] lg:grid-cols-[minmax(400px,32%),1fr] xl:shadow-card'>
-          <section className={`h-full min-h-0 md:border-r md:border-wa-border ${!basePath ? "hidden" : ""} md:block`}>
-            <Sidebar />
+        <div className='grid h-full grid-cols-1 overflow-hidden bg-wa-surface md:grid-cols-[350px,minmax(0,1fr)] lg:grid-cols-[minmax(400px,32%),minmax(0,1fr)] xl:shadow-card'>
+          <section className={`h-full min-h-0 min-w-0 flex-col md:border-r md:border-wa-border ${!basePath ? "hidden" : "flex"} md:flex`}>
+            <div className='min-h-0 flex-1'>
+              <Sidebar />
+            </div>
+            {/* phone: switch to Pixify / Connectify (tablet and desktop use the left rail) */}
+            <AppSwitcher variant='bar' className='md:hidden' />
           </section>
 
           {/**message component**/}
