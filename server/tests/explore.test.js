@@ -36,6 +36,14 @@ const fake = http.createServer((rq, rs) => {
     })) }))
   } else if (u.pathname === '/v1/search') {
     rs.end(JSON.stringify({ photos: Array.from({ length: per }, (_, i) => ({ id: `${q}${page}${i}`, url: 'https://www.pexels.com/photo/x', photographer: 'Sam Lee', photographer_url: 'https://www.pexels.com/@sam', src: { portrait: `https://images.pexels.com/${q}-${page}-${i}.jpg`, medium: 'https://images.pexels.com/m.jpg' } })) }))
+  } else if (u.pathname === '/pixabay/api/videos/') {
+    seenAuth.push('pixabay:' + u.searchParams.get('key'))
+    rs.end(JSON.stringify({ hits: Array.from({ length: per }, (_, i) => ({
+      id: Number(`${page}${i}`), pageURL: 'https://pixabay.com/videos/x', user: 'Ravi', user_id: 7,
+      videos: { medium: { url: `https://cdn.pixabay.com/${q}-${page}-${i}-m.mp4`, width: i % 2 ? 720 : 1280, height: i % 2 ? 1280 : 720, thumbnail: 'https://cdn.pixabay.com/t.jpg' }, small: { url: 'https://cdn.pixabay.com/s.mp4', width: 640, height: 360 } }
+    })) }))
+  } else if (u.pathname === '/pixabay/api/') {
+    rs.end(JSON.stringify({ hits: Array.from({ length: per }, (_, i) => ({ id: Number(`${page}${i}`), pageURL: 'https://pixabay.com/photos/x', user: 'Mia', user_id: 9, webformatURL: 'https://cdn.pixabay.com/w.jpg', largeImageURL: `https://cdn.pixabay.com/${q}-${page}-${i}-l.jpg`, imageWidth: 800, imageHeight: 1200 })) }))
   } else { rs.statusCode = 404; rs.end('{}') }
 })
 
@@ -86,6 +94,19 @@ const fake = http.createServer((rq, rs) => {
   const rx = await req('GET', '/explore?reels=1&before=x:1', C.token)
   check('Pexels reels: portrait videos, best file', rx.body.posts.length === 8 && rx.body.posts.every((p) => p.isReel && p.media[0].kind === 'video' && p.media[0].url.endsWith('-hd.mp4') && p.media[0].poster))
   check('bad cursor is safe', (await req('GET', '/explore?before=zzz', C.token)).status === 200)
+
+  // Pixabay (used when PIXABAY_API_KEY is set; tested directly against the fake server)
+  process.env.PIXABAY_API_KEY = 'pix-key'
+  process.env.PIXABAY_API_BASE = `http://localhost:${FAKE_PORT}/pixabay`
+  const pixabay = require('../helpers/pixabay')
+  const stock = require('../helpers/stock')
+  check('Pixabay is preferred when its key is set', stock.enabled() && pixabay.enabled())
+  const pr = await stock.reels(1, 8)
+  check('Pixabay reels: videos, tall ones first', pr.length === 8 && pr.every((p) => p.isReel && p.media[0].kind === 'video') && pr[0].media[0].height > pr[0].media[0].width)
+  check('Pixabay credit + poster', pr.every((p) => p.external.source === 'Pixabay' && p.external.by === 'Ravi' && p.external.byUrl.includes('/users/Ravi-7/') && p.media[0].poster))
+  const pe = await stock.explore(2, 24)
+  check('Pixabay explore: tall photos + a video every 5', pe.length === 24 && pe[0].media[0].kind === 'video' && pe[1].media[0].url.endsWith('-l.jpg') && pe[5].media[0].kind === 'video')
+  check('Pixabay key sent', seenAuth.includes('pixabay:pix-key'))
 
   fake.close()
   console.log(results.join('\n'))

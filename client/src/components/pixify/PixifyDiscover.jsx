@@ -27,10 +27,10 @@ const exploreBlocks = (items) => {
   return out
 }
 
-// "Photo by X on Pexels" (Pexels asks apps to credit them)
+// "Photo by X on Pixabay / Pexels" (both ask apps to credit them)
 export const PexelsCredit = ({ post, className = '' }) => (
   <a href={post.external.link} target='_blank' rel='noopener noreferrer' onClick={(e) => e.stopPropagation()} className={`hover:underline ${className}`}>
-    {post.media[0].kind === 'video' ? 'Video' : 'Photo'} by {post.external.by} on Pexels
+    {post.media[0].kind === 'video' ? 'Video' : 'Photo'} by {post.external.by} on {post.external.source}
   </a>
 )
 
@@ -71,7 +71,7 @@ export const PixifyExplore = () => {
       </div>
       {!paged.loading && !paged.items.length && <p className='py-20 text-center text-sm text-px-muted'>Nothing to explore yet. Posts from public accounts show up here.</p>}
       {paged.done && paged.items.length > 0 && <p className='py-8 text-center text-sm text-px-muted'>You've seen everything for now.</p>}
-      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some photos and videos are provided by <a href='https://www.pexels.com' target='_blank' rel='noopener noreferrer' className='underline'>Pexels</a></p>}
+      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some photos and videos are provided by {[...new Set(paged.items.filter((p) => p.external).map((p) => p.external.source))].map((src, i) => <React.Fragment key={src}>{i > 0 && ' and '}<a href={src === 'Pixabay' ? 'https://pixabay.com' : 'https://www.pexels.com'} target='_blank' rel='noopener noreferrer' className='underline'>{src}</a></React.Fragment>)}</p>}
       <div ref={more} />
       {photo && (
         <Modal onClose={() => setPhoto(null)} label='Photo' className='flex max-h-[92vh] max-w-[92vw] flex-col items-center gap-2'>

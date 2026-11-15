@@ -217,7 +217,7 @@ const feed = handle(async (req) => {
 // (plus people you follow), ranked by likes, comments and plays with newer posts first, and endless: when everyone's
 // posts have been shown, free stock photos / videos from Pexels continue (only if PEXELS_API_KEY is set).
 // Paging cursor (?before=): "p:N" = page N of our posts, "x:K" = page K from Pexels.
-const pexels = require('../helpers/pexels')
+const pexels = require('../helpers/stock') // Pixabay or Pexels, whichever key is set
 const explore = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'pixify')
     const reels = req.query.reels === '1'
@@ -230,7 +230,7 @@ const explore = handle(async (req) => {
             const posts = reels ? await pexels.reels(k, per) : await pexels.explore(k, per)
             return { posts, next : posts.length && k < 500 ? `x:${k + 1}` : null }
         } catch (error) {
-            console.error('[pexels]', error.message)
+            console.error('[stock media]', error.message)
             return { posts : [], next : null }
         }
     }
@@ -256,7 +256,7 @@ const explore = handle(async (req) => {
     ])
     const posts = await S.serializePosts(raw, ctx)
     const next = raw.length === per ? `p:${page + 1}` : pexels.enabled() ? 'x:1' : null
-    return { posts, next, ...(pexels.enabled() ? { credit : 'Pexels' } : {}) }
+    return { posts, next,  }
 })
 
 // GET /api/social/users/:id/posts?app=
