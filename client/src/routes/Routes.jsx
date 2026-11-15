@@ -13,7 +13,9 @@ import PixifyHome from "../components/pixify/PixifyHome";
 import PixifyProfile, { PixifyEditProfile } from "../components/pixify/PixifyProfile";
 import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage } from "../components/pixify/PixifyDiscover";
 import PixifyNotifications from "../components/pixify/PixifyNotifications";
-import Connectify from "../pages/Connectify";
+import ConnectifyLayout from "../components/connectify/ConnectifyLayout";
+import ConnectifyHome from "../components/connectify/ConnectifyHome";
+import { ConnectifyProfile, ConnectifyFriends, ConnectifyNotifications, ConnectifySearch, ConnectifyPostPage, ConnectifyMenu } from "../components/connectify/ConnectifyPages";
 
 const router = createBrowserRouter([
 {
@@ -57,7 +59,16 @@ const router = createBrowserRouter([
                 },
                 {
                     path : 'connectify',
-                    element : <Connectify/>
+                    element : <ConnectifyLayout/>,
+                    children : [
+                        { index : true, element : <ConnectifyHome/> },
+                        { path : 'friends', element : <ConnectifyFriends/> },
+                        { path : 'notifications', element : <ConnectifyNotifications/> },
+                        { path : 'search', element : <ConnectifySearch/> },
+                        { path : 'menu', element : <ConnectifyMenu/> },
+                        { path : 'p/:postId', element : <ConnectifyPostPage/> },
+                        { path : 'u/:handle', element : <ConnectifyProfile/> },
+                    ]
                 },
                 {
                     path : ':userId',

@@ -9,12 +9,13 @@ import { AppMark } from '../apps/AppLogos'
 import { socketCall, newClientId } from '../../helpers/socketCall'
 import { notify, notifyError } from '../../helpers/toast'
 import ForwardDialog from '../ForwardDialog'
+import { useContactList } from '../../helpers/contacts'
 
 // Caption / post text: @mentions link to profiles, #hashtags are highlighted, long text folds behind "more"
 export const RichText = ({ text, app, limit = 0, className = '', linkClass = '' }) => {
   const [open, setOpen] = useState(false)
   if (!text) return null
-  const cut = limit && !open && text.length > limit
+  const cut = limit > 0 && !open && text.length > limit
   const shown = cut ? text.slice(0, limit).replace(/\s+\S*$/, '') : text
   return (
     <span className={`whitespace-pre-wrap break-words ${className}`}>
@@ -114,8 +115,9 @@ export const pixifyAspect = (post) => {
 export const useSendToChat = () => {
   const socket = useSelector((s) => s.user.socketConnection)
   const [post, setPost] = useState(null)
+  const contacts = useContactList()
   const element = post && (
-    <ForwardDialog count={1} onClose={() => setPost(null)} onForward={async (targets) => {
+    <ForwardDialog count={1} title='Send to' extraPeople={contacts || []} onClose={() => setPost(null)} onForward={async (targets) => {
       const text = postLink(post)
       const failed = []
       for (const receiver of targets) {
@@ -252,3 +254,10 @@ export const SharedPostCard = ({ app, postId, mine }) => {
   )
 }
 
+
+// a person's photo filling a tile (friend cards); initials when there's no photo or it fails to load
+export const PersonPhoto = ({ person, size = 96, className = 'h-full w-full object-cover' }) => {
+  const [broken, setBroken] = useState(false)
+  if (!person?.profile_pic || broken) return <Avatar width={size} height={size} name={person?.name} />
+  return <img src={person.profile_pic} alt='' loading='lazy' onError={() => setBroken(true)} className={className} />
+}

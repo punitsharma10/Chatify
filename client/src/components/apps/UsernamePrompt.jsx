@@ -6,10 +6,10 @@ import { setUser } from '../../redux/userSlice'
 import { notify, notifyError } from '../../helpers/toast'
 import Avatar from '../Avatar'
 import UsernameField, { normalizeUsername } from './UsernameField'
-import { PixifyMark, PixifyWordmark } from './AppLogos'
+import { PixifyMark, PixifyWordmark, ConnectifyMark, ConnectifyWordmark } from './AppLogos'
 
 // Shown the first time someone opens Pixify without an @username. The same name is used in all three apps.
-const UsernamePrompt = () => {
+const UsernamePrompt = ({ app = 'pixify' }) => {
   const user = useSelector((s) => s.user)
   const dispatch = useDispatch()
   const navigate = useNavigate()
@@ -25,7 +25,7 @@ const UsernamePrompt = () => {
       const res = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/updateuser`, { username : normalizeUsername(value) }, { withCredentials : true })
       if (res.data.success) {
         dispatch(setUser(res.data.data))
-        notify(`Welcome to Pixify, @${res.data.data.username}!`)
+        notify(`Welcome to ${app === 'pixify' ? 'Pixify' : 'Connectify'}, @${res.data.data.username}!`)
       }
     } catch (error) {
       notifyError(error?.response?.data?.message || "Couldn't save your username. Please try again.")
@@ -37,7 +37,7 @@ const UsernamePrompt = () => {
   return (
     <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4' role='dialog' aria-modal='true' aria-labelledby='px-username-title'>
       <form onSubmit={save} className='w-full max-w-[380px] animate-pop rounded-2xl border border-px-border bg-px-bg px-8 pb-6 pt-8 text-center text-px-text'>
-        <div className='flex items-center justify-center gap-2'><PixifyMark size={34} /><PixifyWordmark /></div>
+        <div className='flex items-center justify-center gap-2'>{app === 'pixify' ? <><PixifyMark size={34} /><PixifyWordmark /></> : <><ConnectifyMark size={34} /><ConnectifyWordmark /></>}</div>
         <div className='mt-6 flex justify-center'><Avatar width={84} height={84} name={user.name} imageUrl={user.profile_pic} /></div>
         <h2 id='px-username-title' className='mt-4 text-[17px] font-semibold'>Choose your username</h2>
         <p className='mt-1 text-sm text-px-muted'>People find and mention you with it. It's the same in Chats, Pixify and Connectify, and you can change it later in your profile.</p>

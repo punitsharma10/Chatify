@@ -9,7 +9,8 @@ import { usePeopleNames } from '../helpers/contacts'
 const MAX_TARGETS = 5
 
 // pick up to 5 chats to forward the selected messages to
-const ForwardDialog = ({ count, onClose, onForward }) => {
+// title / extraPeople: used by Pixify and Connectify "Send to chat" (chats + saved contacts you haven't chatted with)
+const ForwardDialog = ({ count, onClose, onForward, title, extraPeople = [] }) => {
   const conversations = useSelector((s) => s.chat.conversations)
   const names = usePeopleNames()
   const [query, setQuery] = useState('')
@@ -18,10 +19,12 @@ const ForwardDialog = ({ count, onClose, onForward }) => {
 
   const people = useMemo(() => {
     // people and groups you can still write to
-    const list = conversations.filter((c) => c.userDetails && (!c.isGroup || c.isMember)).map((c) => c.userDetails)
+    const chats = conversations.filter((c) => c.userDetails && (!c.isGroup || c.isMember)).map((c) => c.userDetails)
+    const seen = new Set(chats.map((p) => String(p._id)))
+    const list = [...chats, ...extraPeople.filter((p) => !seen.has(String(p._id)))]
     const q = query.trim().toLowerCase()
     return list.filter((p) => !p.blockedByMe && (!q || names.name(p).toLowerCase().includes(q)))
-  }, [conversations, query, names])
+  }, [conversations, query, names, extraPeople])
 
   const toggle = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= MAX_TARGETS ? p : [...p, id]))
 
@@ -32,7 +35,7 @@ const ForwardDialog = ({ count, onClose, onForward }) => {
   }
 
   return (
-    <Dialog title={`Forward ${count} message${count > 1 ? 's' : ''} to`} onClose={onClose} wide>
+    <Dialog title={title || `Forward ${count} message${count > 1 ? 's' : ''} to`} onClose={onClose} wide>
       <div className='flex h-[38px] items-center gap-3 rounded-lg bg-wa-panel px-3'>
         <IoSearchOutline size={17} className='text-wa-icon' />
         <input
@@ -70,7 +73,7 @@ const ForwardDialog = ({ count, onClose, onForward }) => {
       {/* WhatsApp-style footer: selected names + round send button */}
       <div className='-mx-6 -mb-5 mt-4 flex items-center gap-3 bg-wa-panel px-6 py-3'>
         <p className='min-w-0 flex-1 truncate text-sm text-wa-text'>
-          {picked.length ? conversations.map((c) => c.userDetails).filter((p) => p && picked.includes(String(p._id))).map((p) => names.name(p)).join(', ') : <span className='text-wa-muted'>Select up to {MAX_TARGETS} chats</span>}
+          {picked.length ? people.filter((p) => picked.includes(String(p._id))).map((p) => names.name(p)).join(', ') : <span className='text-wa-muted'>Select up to {MAX_TARGETS} chats</span>}
         </p>
         <button onClick={onClose} className='h-9 rounded-full border border-wa-line bg-wa-surface px-5 text-sm font-medium text-wa-teal hover:bg-wa-hover'>Cancel</button>
         <button
