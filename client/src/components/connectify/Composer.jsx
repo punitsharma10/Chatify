@@ -1,12 +1,38 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { IoClose, IoImages, IoEarth, IoPeople, IoLockClosed, IoCaretDown, IoArrowBack } from 'react-icons/io5'
+import { IoClose, IoImages, IoEarth, IoPeople, IoLockClosed, IoCaretDown, IoArrowBack, IoHappy, IoLocation, IoPricetag } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, uploadMedia, checkMediaFile } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { PixifyMark } from '../apps/AppLogos'
 import { Modal } from '../social/common'
 import { SharedPreview } from './CxPost'
+import { PeoplePicker } from '../social/extras'
+
+// Facebook-style "Feeling / activity"
+export const FEELINGS = [
+  ['😊', 'feeling happy'], ['🥰', 'feeling loved'], ['😎', 'feeling cool'], ['🤩', 'feeling excited'], ['😌', 'feeling relaxed'], ['🙏', 'feeling thankful'],
+  ['😴', 'feeling tired'], ['😢', 'feeling sad'], ['😤', 'feeling determined'], ['🤒', 'feeling sick'], ['😇', 'feeling blessed'], ['🥳', 'feeling festive'],
+  ['🎉', 'celebrating'], ['✈️', 'travelling'], ['🍽️', 'eating'], ['☕', 'drinking coffee'], ['🎬', 'watching a movie'], ['🎧', 'listening to music'],
+  ['📚', 'reading'], ['🏋️', 'working out'], ['🎮', 'playing games'], ['💻', 'working'], ['🛍️', 'shopping'], ['🏖️', 'on vacation'],
+].map(([e, t]) => `${e} ${t}`)
+
+const FeelingPicker = ({ value, onChange, onClose }) => (
+  <div className='flex min-h-0 flex-1 flex-col'>
+    <header className='relative flex h-[60px] shrink-0 items-center justify-center border-b border-cx-border text-xl font-bold'>
+      <button onClick={onClose} className='absolute left-4 flex h-9 w-9 items-center justify-center rounded-full bg-cx-input' title='Back'><IoArrowBack size={20} /></button>
+      How are you feeling?
+    </header>
+    <div className='grid min-h-0 flex-1 grid-cols-2 gap-1 overflow-y-auto p-3'>
+      {value && <button onClick={() => { onChange(''); onClose() }} className='col-span-2 rounded-lg p-2 text-left text-[15px] font-semibold text-cx-blue hover:bg-cx-hover'>Remove feeling</button>}
+      {FEELINGS.map((f) => (
+        <button key={f} onClick={() => { onChange(f); onClose() }} className={`flex items-center gap-2 rounded-lg p-2 text-left text-[15px] hover:bg-cx-hover ${value === f ? 'bg-cx-hover font-semibold' : ''}`}>
+          <span className='flex h-9 w-9 items-center justify-center rounded-full bg-cx-input text-xl'>{f.split(' ')[0]}</span>{f.split(' ').slice(1).join(' ')}
+        </button>
+      ))}
+    </div>
+  </div>
+)
 
 export const AUDIENCES = [
   { id : 'public', label : 'Public', hint : 'Anyone on or off Connectify', Icon : IoEarth },
@@ -39,7 +65,8 @@ const AudiencePicker = ({ value, onChange, onClose }) => (
 )
 
 // Create post (or share a post when `sharedPost` is given)
-const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
+// group: post inside that Connectify group
+const Composer = ({ sharedPost, withPhotos, group, onClose, onPosted }) => {
   const user = useSelector((s) => s.user)
   const firstName = (user.name || '').trim().split(/\s+/)[0]
   const [text, setText] = useState('')
@@ -48,6 +75,13 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
   const [picking, setPicking] = useState(false)
   const [background, setBackground] = useState('')
   const [alsoPixify, setAlsoPixify] = useState(false)
+  const [feeling, setFeeling] = useState('')
+  const [location, setLocation] = useState('')
+  const [placing, setPlacing] = useState(false)
+  const [tagged, setTagged] = useState([])
+  const [tagging, setTagging] = useState(false)
+  const [friends, setFriends] = useState(null)
+  const [feelingOpen, setFeelingOpen] = useState(false)
   const [progress, setProgress] = useState(null)
   const input = useRef(null)
   const filesRef = useRef(files)
@@ -71,10 +105,11 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
     try {
       const media = files.length ? await uploadMedia(files.map((f) => f.file), setProgress) : []
       const res = await api.post('/posts', {
-        app : 'connectify', text, media, audience,
+        app : 'connectify', text, media, audience, feeling, location, tagged : tagged.map((p) => p._id),
+        ...(group ? { group : group._id } : {}),
         ...(canBg && background ? { background } : {}),
         ...(sharedPost ? { sharedPost : sharedPost._id } : {}),
-        ...(alsoPixify && media.length ? { crossPost : ['pixify'] } : {})
+        ...(alsoPixify && media.length && !group ? { crossPost : ['pixify'] } : {})
       })
       notify(sharedPost ? 'Shared to your feed' : res.crossPosted?.length ? 'Posted to Connectify and Pixify' : 'Posted')
       onPosted(res.post)
@@ -87,7 +122,7 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
   const A = audienceOf(audience)
   return (
     <Modal onClose={() => progress === null && onClose()} closeButton={false} label='Create post' className='flex h-[100dvh] w-full flex-col overflow-hidden bg-cx-card text-cx-text sm:h-auto sm:max-h-[90dvh] sm:w-[500px] sm:rounded-lg sm:shadow-2xl'>
-      {picking ? <AudiencePicker value={audience} onChange={setAudience} onClose={() => setPicking(false)} /> : (
+      {feelingOpen ? <FeelingPicker value={feeling} onChange={setFeeling} onClose={() => setFeelingOpen(false)} /> : picking ? <AudiencePicker value={audience} onChange={setAudience} onClose={() => setPicking(false)} /> : (
         <>
           <header className='relative flex h-[60px] shrink-0 items-center justify-center border-b border-cx-border text-xl font-bold'>
             {sharedPost ? 'Share' : 'Create post'}
@@ -97,8 +132,15 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
             <div className='flex items-center gap-2'>
               <Avatar width={40} height={40} name={user.name} imageUrl={user.profile_pic} />
               <div>
-                <p className='text-[15px] font-semibold'>{user.name}</p>
-                <button onClick={() => setPicking(true)} className='flex items-center gap-1 rounded-md bg-cx-input px-2 py-0.5 text-[13px] font-semibold'><A.Icon size={12} />{A.label}<IoCaretDown size={10} /></button>
+                <p className='text-[15px]'>
+                  <b>{user.name}</b>
+                  {feeling && <> is {feeling.split(' ')[0]} <b>{feeling.split(' ').slice(1).join(' ')}</b></>}
+                  {tagged.length > 0 && <> with <b>{tagged[0].name}</b>{tagged.length > 1 && <> and <b>{tagged.length - 1} other{tagged.length > 2 ? 's' : ''}</b></>}</>}
+                  {location && <> at <b>{location}</b></>}
+                </p>
+                {group
+                  ? <span className='flex items-center gap-1 rounded-md bg-cx-input px-2 py-0.5 text-[13px] font-semibold'><IoPeople size={12} />{group.name}</span>
+                  : <button onClick={() => setPicking(true)} className='flex items-center gap-1 rounded-md bg-cx-input px-2 py-0.5 text-[13px] font-semibold'><A.Icon size={12} />{A.label}<IoCaretDown size={10} /></button>}
               </div>
             </div>
             {canBg && background ? (
@@ -130,7 +172,14 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
               </div>
             )}
             {sharedPost && <div className='mt-3'><SharedPreview post={sharedPost} /></div>}
-            {files.length > 0 && (
+            {placing && (
+              <div className='mt-3 flex items-center gap-2 rounded-lg border border-cx-border px-3'>
+                <IoLocation className='text-[#f5533d]' />
+                <input autoFocus value={location} onChange={(e) => setLocation(e.target.value)} maxLength={100} placeholder='Where are you?' className='h-10 flex-1 bg-transparent text-[15px] outline-none' />
+                <button onClick={() => { setPlacing(false); if (!location.trim()) setLocation('') }} className='text-sm font-semibold text-cx-blue'>Done</button>
+              </div>
+            )}
+            {files.length > 0 && !group && (
               <label className='mt-3 flex cursor-pointer items-center gap-3 rounded-lg border border-cx-border p-3'>
                 <PixifyMark size={28} />
                 <span className='flex-1'><span className='block text-[15px] font-semibold'>Also share to Pixify</span><span className='block text-xs text-cx-muted'>Your followers see these photos on Pixify too</span></span>
@@ -142,7 +191,12 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
             {!sharedPost && (
               <div className='mb-3 flex items-center justify-between rounded-lg border border-cx-border px-4 py-2'>
                 <span className='text-[15px] font-semibold'>Add to your post</span>
-                <button onClick={() => input.current?.click()} disabled={progress !== null} title='Photo/video' className='flex h-9 w-9 items-center justify-center rounded-full hover:bg-cx-hover'><IoImages size={24} className='text-[#45bd62]' /></button>
+                <span className='flex items-center'>
+                  <button onClick={() => input.current?.click()} disabled={progress !== null} title='Photo/video' className='flex h-9 w-9 items-center justify-center rounded-full hover:bg-cx-hover'><IoImages size={24} className='text-[#45bd62]' /></button>
+                  <button onClick={async () => { if (friends === null) { try { const me = await api.get(`/users/${user._id}/friends`); setFriends(me.people.filter((p) => !p.self)) } catch { setFriends([]) } } setTagging(true) }} title='Tag people' className='flex h-9 w-9 items-center justify-center rounded-full hover:bg-cx-hover'><IoPricetag size={22} className='text-cx-blue' /></button>
+                  <button onClick={() => setFeelingOpen(true)} title='Feeling/activity' className='flex h-9 w-9 items-center justify-center rounded-full hover:bg-cx-hover'><IoHappy size={24} className='text-[#f7b928]' /></button>
+                  <button onClick={() => setPlacing(true)} title='Check in' className='flex h-9 w-9 items-center justify-center rounded-full hover:bg-cx-hover'><IoLocation size={24} className='text-[#f5533d]' /></button>
+                </span>
               </div>
             )}
             <button onClick={post} disabled={!canPost} className='relative h-9 w-full overflow-hidden rounded-md bg-cx-blue text-[15px] font-semibold text-white disabled:bg-cx-input disabled:text-cx-muted'>
@@ -153,6 +207,7 @@ const Composer = ({ sharedPost, withPhotos, onClose, onPosted }) => {
         </>
       )}
       <input ref={input} type='file' accept='image/*,video/*' multiple className='hidden' onChange={(e) => { add(e.target.files || []); e.target.value = '' }} />
+      {tagging && <PeoplePicker title='Tag friends' app='connectify' t='cx' source={friends || []} initial={tagged} onClose={() => setTagging(false)} onDone={(list) => { setTagged(list); setTagging(false) }} />}
     </Modal>
   )
 }

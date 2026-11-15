@@ -1,30 +1,41 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { IoCamera, IoPencil, IoChatbubbleEllipses, IoHome, IoLocationSharp, IoBriefcase, IoTime, IoSearchOutline, IoCloseCircle, IoArrowBack, IoPeople } from 'react-icons/io5'
+import { IoCamera, IoPencil, IoChatbubbleEllipses, IoHome, IoLocationSharp, IoBriefcase, IoTime, IoSearchOutline, IoCloseCircle, IoArrowBack, IoPeople, IoSchool, IoHeart, IoLink, IoGift, IoEllipsisHorizontal, IoHandLeft } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, enc, longAgo, usePaged, useOnVisible } from '../../helpers/social'
 import uploadFile from '../../helpers/uploadFile'
 import { setUser } from '../../redux/userSlice'
 import { notify, notifyError } from '../../helpers/toast'
-import { MediaThumb, Modal, ReactionIcon, PersonPhoto } from '../social/common'
+import { MediaThumb, Modal, ReactionIcon, PersonPhoto, ActionSheet } from '../social/common'
+import { ReportSheet } from '../social/extras'
 import { APPS } from '../../helpers/apps'
 import { AppMark } from '../apps/AppLogos'
 import { useConnectify, Card, SideLink } from './ConnectifyLayout'
 import { CxPostCard } from './CxPost'
 import { FriendButton, CreatePostCard } from './ConnectifyHome'
+import { SHORTCUTS } from './ConnectifyMore'
 
 const userLink = (p) => `/connectify/u/${p.username || p._id}`
 const Spinner = () => <span className='mx-auto my-10 block h-7 w-7 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />
 
+export const RELATIONSHIPS = { '' : 'Not set', single : 'Single', in_a_relationship : 'In a relationship', engaged : 'Engaged', married : 'Married', its_complicated : "It's complicated", separated : 'Separated', divorced : 'Divorced', widowed : 'Widowed' }
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+export const birthdayText = (b) => (b?.month ? `${MONTHS[b.month - 1]} ${b.day}${b.year ? `, ${b.year}` : ''}` : '')
+
 /* ---------------- profile ---------------- */
 
 const EditProfile = ({ profile, onClose, onSaved }) => {
-  const [form, setForm] = useState({ bio : profile.bio, city : profile.city, work : profile.work })
+  const [form, setForm] = useState({ bio : profile.bio, city : profile.city, work : profile.work, education : profile.education || '', hometown : profile.hometown || '', relationship : profile.relationship || '', website : profile.website || '' })
+  const [bday, setBday] = useState({ month : profile.birthday?.month || '', day : profile.birthday?.day || '', year : profile.birthday?.year || '' })
   const [busy, setBusy] = useState(false)
   const save = async () => {
     setBusy(true)
-    try { await api.post('/profile', { app : 'connectify', ...form }); notify('Profile updated'); onSaved() } catch (e) { notifyError(e.message) }
+    try {
+      const birthday = bday.month && bday.day ? { month : Number(bday.month), day : Number(bday.day), ...(bday.year ? { year : Number(bday.year) } : {}) } : null
+      await api.post('/profile', { app : 'connectify', ...form, birthday })
+      notify('Profile updated'); onSaved()
+    } catch (e) { notifyError(e.message) }
     setBusy(false)
   }
   const field = (key, label, max, placeholder) => (
@@ -46,6 +57,27 @@ const EditProfile = ({ profile, onClose, onSaved }) => {
         </label>
         {field('city', 'Current city', 60, 'e.g. Pune')}
         {field('work', 'Work', 80, 'e.g. Developer at Omnis')}
+        {field('education', 'Education', 80, 'e.g. Studied at Pune University')}
+        {field('hometown', 'Hometown', 60, 'e.g. Nagpur')}
+        {field('website', 'Website', 200, 'e.g. mysite.com')}
+        <label className='mt-4 block'>
+          <span className='text-[15px] font-semibold'>Relationship</span>
+          <select value={form.relationship} onChange={(e) => setForm({ ...form, relationship : e.target.value })} className='mt-1 h-10 w-full rounded-md border border-cx-border bg-cx-input px-3 outline-none'>
+            {Object.entries(RELATIONSHIPS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
+        <div className='mt-4'>
+          <span className='text-[15px] font-semibold'>Birthday</span> <span className='text-xs text-cx-muted'>(friends see the day and month)</span>
+          <div className='mt-1 grid grid-cols-3 gap-2'>
+            <select value={bday.month} onChange={(e) => setBday({ ...bday, month : e.target.value })} aria-label='Month' className='h-10 rounded-md border border-cx-border bg-cx-input px-2 outline-none'>
+              <option value=''>Month</option>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+            </select>
+            <select value={bday.day} onChange={(e) => setBday({ ...bday, day : e.target.value })} aria-label='Day' className='h-10 rounded-md border border-cx-border bg-cx-input px-2 outline-none'>
+              <option value=''>Day</option>{Array.from({ length : 31 }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}
+            </select>
+            <input value={bday.year} onChange={(e) => setBday({ ...bday, year : e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder='Year (private)' aria-label='Year' className='h-10 rounded-md border border-cx-border bg-cx-input px-2 outline-none' />
+          </div>
+        </div>
         <p className='mt-4 text-sm text-cx-muted'>Your name and profile picture are shared with Chats. Change them in Chats → Profile.</p>
       </div>
       <div className='flex justify-end gap-2 border-t border-cx-border p-3'>
@@ -102,7 +134,12 @@ const Intro = ({ profile, onEdit }) => (
     {profile.self && <button onClick={onEdit} className='mt-3 h-9 w-full rounded-md bg-cx-input font-semibold hover:brightness-95'>{profile.bio ? 'Edit bio' : 'Add bio'}</button>}
     <ul className='mt-3 space-y-3 text-[15px]'>
       {profile.work && <li className='flex items-center gap-3'><IoBriefcase className='text-cx-muted' size={20} />Works at <b>{profile.work}</b></li>}
+      {profile.education && <li className='flex items-center gap-3'><IoSchool className='text-cx-muted' size={20} />Studied at <b>{profile.education}</b></li>}
       {profile.city && <li className='flex items-center gap-3'><IoHome className='text-cx-muted' size={20} />Lives in <b>{profile.city}</b></li>}
+      {profile.hometown && <li className='flex items-center gap-3'><IoLocationSharp className='text-cx-muted' size={20} />From <b>{profile.hometown}</b></li>}
+      {profile.relationship && <li className='flex items-center gap-3'><IoHeart className='text-cx-muted' size={20} />{RELATIONSHIPS[profile.relationship]}</li>}
+      {profile.birthday && <li className='flex items-center gap-3'><IoGift className='text-cx-muted' size={20} />Birthday: {birthdayText(profile.birthday)}</li>}
+      {profile.website && <li className='flex items-center gap-3'><IoLink className='text-cx-muted' size={20} /><a href={profile.website} target='_blank' rel='noopener noreferrer nofollow' className='truncate text-cx-blue hover:underline'>{profile.website.replace(/^https?:\/\//, '')}</a></li>}
       {profile.username && <li className='flex items-center gap-3'><IoLocationSharp className='text-cx-muted' size={20} />@{profile.username}</li>}
       <li className='flex items-center gap-3'><IoTime className='text-cx-muted' size={20} />Joined {new Date(profile.joinedAt).toLocaleDateString(undefined, { month : 'long', year : 'numeric' })}</li>
     </ul>
@@ -119,7 +156,10 @@ export const ConnectifyProfile = () => {
   const [tab, setTab] = useState('posts')
   const [editing, setEditing] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [menu, setMenu] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const cover = useRef(null)
+  const tool = async (url, body, text) => { try { await api.post(url, body); notify(text); load() } catch (e) { notifyError(e.message) } }
 
   const load = useCallback(() => api.get(`/users/${enc(handle)}?app=connectify`).then((r) => setProfile(r.profile)).catch(() => setProfile(null)), [handle])
   useEffect(() => { setProfile(undefined); setTab('posts'); load() }, [load, version])
@@ -171,6 +211,10 @@ export const ConnectifyProfile = () => {
                 <>
                   <FriendButton person={profile} initial={profile.friendStatus} onChange={() => load()} />
                   <button onClick={() => navigate('/' + profile._id)} className='flex h-9 items-center gap-2 rounded-md bg-cx-blue px-3 font-semibold text-white'><IoChatbubbleEllipses />Message</button>
+                  {profile.friendStatus === 'friends' && (
+                    <button onClick={() => tool(`/pokes/${profile._id}`, {}, `You poked ${profile.name.split(' ')[0]}`)} disabled={profile.pokedByMe} title={profile.pokedByMe ? 'Poked' : 'Poke'} className='flex h-9 items-center gap-2 rounded-md bg-cx-input px-3 font-semibold hover:brightness-95 disabled:opacity-60'><IoHandLeft />{profile.pokedMe && !profile.pokedByMe ? 'Poke back' : profile.pokedByMe ? 'Poked' : 'Poke'}</button>
+                  )}
+                  <button onClick={() => setMenu(true)} title='More' className='flex h-9 w-10 items-center justify-center rounded-md bg-cx-input hover:brightness-95'><IoEllipsisHorizontal /></button>
                 </>
               )}
             </div>
@@ -209,6 +253,15 @@ export const ConnectifyProfile = () => {
         {tab === 'photos' && <Card className='p-4'><h2 className='mb-3 text-xl font-bold'>Photos</h2><Photos id={profile._id} /></Card>}
       </div>
       {editing && <EditProfile profile={profile} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
+      {menu && (
+        <ActionSheet tone='cx' onClose={() => setMenu(false)} items={[
+          { label : profile.snoozedUntil ? 'Unsnooze' : `Snooze ${profile.name.split(' ')[0]} for 30 days`, onClick : () => tool(`/cx/snooze/${profile._id}`, { snooze : !profile.snoozedUntil }, profile.snoozedUntil ? 'Unsnoozed' : 'Snoozed for 30 days') },
+          { label : profile.unfollowed ? 'Follow posts again' : 'Unfollow', hidden : profile.friendStatus !== 'friends', onClick : () => tool(`/cx/unfollow/${profile._id}`, { unfollow : !profile.unfollowed }, profile.unfollowed ? 'You\'ll see their posts again' : 'You\'ll stay friends but won\'t see their posts') },
+          { label : 'Copy link to profile', onClick : async () => { try { await navigator.clipboard.writeText(`${window.location.origin}${userLink(profile)}`); notify('Link copied') } catch { notifyError("Couldn't copy") } } },
+          { label : 'Report profile', danger : true, onClick : () => setReporting(true) },
+        ]} />
+      )}
+      {reporting && <ReportSheet app='connectify' t='cx' target={{ user : profile._id }} onClose={() => setReporting(false)} />}
     </div>
   )
 }
@@ -429,8 +482,7 @@ export const ConnectifyMenu = () => {
       <h1 className='mb-3 text-2xl font-bold'>Menu</h1>
       <Card className='mb-4 p-2'><SideLink icon={<Avatar width={36} height={36} name={me.name} imageUrl={me.profile_pic} />} label={me.name} onClick={() => navigate(`/connectify/u/${me.username || me._id}`)} /></Card>
       <div className='grid grid-cols-2 gap-2'>
-        <Card className='p-3'><button onClick={() => navigate('/connectify/friends')} className='w-full text-left'><IoPeople size={26} className='text-cx-blue' /><span className='mt-2 block font-semibold'>Friends</span></button></Card>
-        <Card className='p-3'><button onClick={() => navigate('/connectify/search')} className='w-full text-left'><IoSearchOutline size={26} className='text-cx-blue' /><span className='mt-2 block font-semibold'>Search</span></button></Card>
+        {SHORTCUTS.map((s) => <Card key={s.path} className='p-3'><button onClick={() => navigate(s.path)} className='w-full text-left'><s.Icon size={26} className={s.color} /><span className='mt-2 block font-semibold'>{s.label}</span></button></Card>)}
       </div>
       <h2 className='mb-2 mt-5 font-semibold text-cx-muted'>Your apps</h2>
       <Card className='p-2'>

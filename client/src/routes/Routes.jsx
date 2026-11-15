@@ -16,6 +16,7 @@ import PixifyNotifications from "../components/pixify/PixifyNotifications";
 import PixifyDirect, { DirectEmpty, DirectOpenUser } from "../components/pixify/direct/PixifyDirect";
 import DirectThread from "../components/pixify/direct/DirectThread";
 import ConnectifyLayout from "../components/connectify/ConnectifyLayout";
+import { ConnectifyGroups, ConnectifyGroup, ConnectifyEvents, ConnectifyEvent, ConnectifyMarket, ConnectifyListing, ConnectifyWatch, ConnectifyMemories, ConnectifySaved, ConnectifyTag, ConnectifyBirthdays, ConnectifyPokes } from "../components/connectify/ConnectifyMore";
 import ConnectifyHome from "../components/connectify/ConnectifyHome";
 import { ConnectifyProfile, ConnectifyFriends, ConnectifyNotifications, ConnectifySearch, ConnectifyPostPage, ConnectifyMenu } from "../components/connectify/ConnectifyPages";
 
@@ -85,6 +86,18 @@ const router = createBrowserRouter([
                         { path : 'menu', element : <ConnectifyMenu/> },
                         { path : 'p/:postId', element : <ConnectifyPostPage/> },
                         { path : 'u/:handle', element : <ConnectifyProfile/> },
+                        { path : 'groups', element : <ConnectifyGroups/> },
+                        { path : 'groups/:groupId', element : <ConnectifyGroup/> },
+                        { path : 'events', element : <ConnectifyEvents/> },
+                        { path : 'events/:eventId', element : <ConnectifyEvent/> },
+                        { path : 'marketplace', element : <ConnectifyMarket/> },
+                        { path : 'marketplace/:listingId', element : <ConnectifyListing/> },
+                        { path : 'watch', element : <ConnectifyWatch/> },
+                        { path : 'memories', element : <ConnectifyMemories/> },
+                        { path : 'saved', element : <ConnectifySaved/> },
+                        { path : 'tags/:tag', element : <ConnectifyTag/> },
+                        { path : 'birthdays', element : <ConnectifyBirthdays/> },
+                        { path : 'pokes', element : <ConnectifyPokes/> },
                     ]
                 },
                 {

@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { IoSearchOutline, IoHome, IoHomeOutline, IoPeople, IoPeopleOutline, IoNotifications, IoNotificationsOutline, IoChatbubbleEllipses, IoMenu, IoBookmark, IoTimeOutline, IoNewspaperOutline } from 'react-icons/io5'
+import { IoSearchOutline, IoHome, IoHomeOutline, IoPeople, IoPeopleOutline, IoNotifications, IoNotificationsOutline, IoChatbubbleEllipses, IoMenu, IoStorefrontOutline, IoStorefront, IoPlayCircleOutline, IoPlayCircle } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import AppSwitcher from '../apps/AppSwitcher'
 import UsernamePrompt from '../apps/UsernamePrompt'
 import { ConnectifyMark, ConnectifyWordmark, ChatsMark, PixifyMark } from '../apps/AppLogos'
 import { useContactList } from '../../helpers/contacts'
 import { useSocialUnread } from '../../helpers/social'
-import { notify } from '../../helpers/toast'
 import { useSendToChat } from '../social/common'
 import Composer from './Composer'
+import { SHORTCUTS, BirthdaysCard } from './ConnectifyMore'
 
 const CxCtx = createContext(null)
 export const useConnectify = () => useContext(CxCtx)
@@ -56,7 +56,6 @@ const ConnectifyLayout = () => {
     version,
     bump : () => setVersion((v) => v + 1),
   }
-  const soon = (what) => () => notify(`${what} is coming soon to Connectify`)
 
   return (
     <CxCtx.Provider value={ctx}>
@@ -76,7 +75,9 @@ const ConnectifyLayout = () => {
           <nav aria-label='Connectify' className='absolute left-1/2 hidden h-full -translate-x-1/2 md:flex'>
             <TopTab active={at('/connectify')} icon={<IoHomeOutline size={26} />} activeIcon={<IoHome size={26} />} label='Home' onClick={() => navigate('/connectify')} />
             <TopTab active={at('/connectify/friends')} icon={<IoPeopleOutline size={27} />} activeIcon={<IoPeople size={27} />} label='Friends' badge={unread.friendRequests} onClick={() => navigate('/connectify/friends')} />
-            <TopTab active={at('/connectify/saved')} icon={<IoNewspaperOutline size={25} />} activeIcon={<IoNewspaperOutline size={25} />} label='Your posts' onClick={() => navigate(meLink)} />
+            <TopTab active={at('/connectify/watch')} icon={<IoPlayCircleOutline size={27} />} activeIcon={<IoPlayCircle size={27} />} label='Watch' onClick={() => navigate('/connectify/watch')} />
+            <TopTab active={at('/connectify/marketplace')} icon={<IoStorefrontOutline size={25} />} activeIcon={<IoStorefront size={25} />} label='Marketplace' onClick={() => navigate('/connectify/marketplace')} />
+            <TopTab active={at('/connectify/groups')} icon={<IoPeopleOutline size={26} className='rotate-12' />} activeIcon={<IoPeople size={26} className='rotate-12' />} label='Groups' onClick={() => navigate('/connectify/groups')} />
           </nav>
 
           <div className='flex items-center gap-2'>
@@ -103,9 +104,7 @@ const ConnectifyLayout = () => {
           {/* left shortcuts (wide screens) */}
           <aside className='hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 xl:block'>
             <SideLink icon={<Avatar width={36} height={36} name={user.name} imageUrl={user.profile_pic} />} label={user.name} onClick={() => navigate(meLink)} />
-            <SideLink icon={<IoPeople size={28} className='text-cx-blue' />} label='Friends' onClick={() => navigate('/connectify/friends')} active={at('/connectify/friends')} />
-            <SideLink icon={<IoTimeOutline size={28} className='text-cx-blue' />} label='Memories' onClick={soon('Memories')} />
-            <SideLink icon={<IoBookmark size={26} className='text-[#c03fd6]' />} label='Saved' onClick={soon('Saved')} />
+            {SHORTCUTS.filter((s) => s.label !== 'Search').map((s) => <SideLink key={s.path} icon={<s.Icon size={28} className={s.color} />} label={s.label} onClick={() => navigate(s.path)} active={at(s.path)} />)}
             <div className='mx-2 my-3 border-t border-cx-border' />
             <p className='px-2 pb-1 text-[17px] font-semibold text-cx-muted'>Your apps</p>
             <SideLink icon={<ChatsMark size={30} />} label='Chats' onClick={() => navigate('/')} />
@@ -119,7 +118,8 @@ const ConnectifyLayout = () => {
 
           {/* contacts (wide screens): click to chat in Chats */}
           <aside className='hidden w-[300px] shrink-0 overflow-y-auto px-2 pt-4 lg:block'>
-            <p className='px-2 pb-2 text-[17px] font-semibold text-cx-muted'>Contacts</p>
+            <BirthdaysCard />
+            <p className='px-2 pb-2 pt-2 text-[17px] font-semibold text-cx-muted'>Contacts</p>
             {contacts === null && <span className='mx-2 my-3 block h-5 w-5 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />}
             {contacts?.length === 0 && <p className='px-2 text-sm text-cx-muted'>Save contacts in Chats to see them here.</p>}
             {contacts?.map((p) => (

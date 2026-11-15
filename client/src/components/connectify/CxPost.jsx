@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Link, useNavigate } from 'react-router-dom'
-import { IoEllipsisHorizontal, IoChatbubbleOutline, IoShareSocialOutline, IoPaperPlaneOutline, IoThumbsUpOutline, IoSend } from 'react-icons/io5'
+import { IoEllipsisHorizontal, IoChatbubbleOutline, IoShareSocialOutline, IoPaperPlaneOutline, IoThumbsUpOutline, IoSend, IoCaretForward, IoPeople } from 'react-icons/io5'
+import { BsPinAngleFill } from 'react-icons/bs'
 import Avatar from '../Avatar'
 import { api, longAgo, compact } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
@@ -9,6 +10,7 @@ import { RichText, ActionSheet, PeopleModal, copyPostLink, REACTIONS, reactionOf
 import { thumbUrl } from '../../helpers/media'
 import { useConnectify, Card } from './ConnectifyLayout'
 import { audienceOf, AUDIENCES } from './Composer'
+import { ReportSheet } from '../social/extras'
 
 const userLink = (p) => `/connectify/u/${p.username || p._id}`
 
@@ -93,7 +95,7 @@ const ReactButton = ({ mine, onReact }) => {
 
 /* ---------- comments ---------- */
 
-const CommentRow = ({ c, onReply, onDelete, onLike, reply }) => {
+const CommentRow = ({ c, onReply, onDelete, onLike, onPin, reply }) => {
   const [menu, setMenu] = useState(false)
   return (
     <div className={`group flex gap-2 ${reply ? 'ml-10' : ''} py-1`}>
@@ -105,15 +107,19 @@ const CommentRow = ({ c, onReply, onDelete, onLike, reply }) => {
             <RichText text={c.text} app='connectify' className='text-[15px]' linkClass='font-semibold text-cx-blue' />
             {c.likeCount > 0 && <span className='absolute -bottom-2 -right-3 flex items-center gap-0.5 rounded-full bg-cx-card px-1 text-xs text-cx-muted shadow'>👍{c.likeCount > 1 ? c.likeCount : ''}</span>}
           </div>
-          {c.canDelete && <button onClick={() => setMenu(true)} className='invisible flex h-8 w-8 items-center justify-center rounded-full text-cx-muted hover:bg-cx-hover group-hover:visible' title='Options'><IoEllipsisHorizontal /></button>}
+          {(c.canDelete || c.canPin) && <button onClick={() => setMenu(true)} className='invisible flex h-8 w-8 items-center justify-center rounded-full text-cx-muted hover:bg-cx-hover group-hover:visible' title='Options'><IoEllipsisHorizontal /></button>}
         </div>
         <div className='flex gap-3 px-3 pt-1 text-xs font-semibold text-cx-muted'>
+          {c.pinned && <span className='flex items-center gap-1 font-normal'><BsPinAngleFill size={10} />Pinned</span>}
           <span className='font-normal'>{longAgo(c.createdAt)}</span>
           <button onClick={() => onLike(c)} className={c.liked ? 'text-cx-blue' : 'hover:underline'}>Like</button>
           {onReply && <button onClick={() => onReply(c)} className='hover:underline'>Reply</button>}
         </div>
       </div>
-      {menu && <ActionSheet tone='cx' onClose={() => setMenu(false)} items={[{ label : 'Delete', danger : true, onClick : () => onDelete(c) }]} />}
+      {menu && <ActionSheet tone='cx' onClose={() => setMenu(false)} items={[
+        { label : c.pinned ? 'Unpin comment' : 'Pin comment', hidden : !c.canPin || !onPin, onClick : () => onPin(c) },
+        { label : 'Delete', danger : true, hidden : !c.canDelete, onClick : () => onDelete(c) },
+      ]} />}
     </div>
   )
 }
@@ -148,13 +154,20 @@ const Comments = ({ post, onCount, autoFocus }) => {
     try { await api.post(`/comments/${c._id}/like`, { like : want }) } catch (e) { notifyError(e.message) }
   }
   const reply = (c) => { setReplyTo(c); setText(c.author.username ? `@${c.author.username} ` : ''); input.current?.focus() }
+  const pin = async (c) => {
+    const want = !c.pinned
+    try {
+      await api.post(`/comments/${c._id}/pin`, { pin : want })
+      setList((l) => { const n = l.map((x) => ({ ...x, pinned : want && x._id === c._id })); return [...n.filter((x) => x.pinned), ...n.filter((x) => !x.pinned)] })
+    } catch (e) { notifyError(e.message) }
+  }
 
   return (
     <div className='border-t border-cx-border px-4 pb-3 pt-2'>
       {list === null && <span className='my-3 block h-5 w-5 animate-spin rounded-full border-2 border-cx-border border-t-cx-muted' />}
       {(list || []).filter((c) => !c.parent).map((c) => (
         <div key={c._id}>
-          <CommentRow c={c} onReply={post.commentsOff ? null : reply} onDelete={del} onLike={like} />
+          <CommentRow c={c} onReply={post.commentsOff ? null : reply} onDelete={del} onLike={like} onPin={pin} />
           {list.filter((r) => r.parent === c._id).map((r) => <CommentRow key={r._id} c={r} reply onReply={post.commentsOff ? null : () => reply(c)} onDelete={del} onLike={like} />)}
         </div>
       ))}
@@ -175,7 +188,8 @@ const Comments = ({ post, onCount, autoFocus }) => {
 
 /* ---------- the post ---------- */
 
-export const CxPostCard = ({ post : initial, onDeleted, expanded = false }) => {
+// onHidden: the post should leave the list (hidden, snoozed, unfollowed)
+export const CxPostCard = ({ post : initial, onDeleted, onHidden, expanded = false, inGroup = false }) => {
   const navigate = useNavigate()
   const { sendToChat, openComposer } = useConnectify()
   const [post, setPost] = useState(initial)
@@ -189,6 +203,11 @@ export const CxPostCard = ({ post : initial, onDeleted, expanded = false }) => {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [people, setPeople] = useState(undefined)
   const [viewer, setViewer] = useState(null) // { media, index }
+  const [reporting, setReporting] = useState(false)
+  const first = post.author.name.split(' ')[0]
+  const tool = async (url, body, okText, hide) => {
+    try { const r = await api.post(url, body); if (r.post) setPost((p) => ({ ...p, ...r.post })); if (okText) notify(okText); if (hide) onHidden?.(post); return r } catch (e) { notifyError(e.message) }
+  }
 
   const react = async (type) => {
     const before = { myReaction : post.myReaction, reactionCount : post.reactionCount, reactionCounts : post.reactionCounts, topReactions : post.topReactions }
@@ -213,10 +232,15 @@ export const CxPostCard = ({ post : initial, onDeleted, expanded = false }) => {
         <div className='min-w-0 flex-1'>
           <p className='text-[15px] leading-5'>
             <Link to={userLink(post.author)} className='font-semibold hover:underline'>{post.author.name}</Link>
+            {post.group && !inGroup && <><IoCaretForward size={12} className='mx-0.5 inline text-cx-muted' /><Link to={`/connectify/groups/${post.group._id}`} className='font-semibold hover:underline'>{post.group.name}</Link></>}
             {post.sharedPost && <span className='text-cx-muted'> shared a post</span>}
+            {post.feeling && <span> is {post.feeling.split(' ')[0]} <b>{post.feeling.split(' ').slice(1).join(' ')}</b></span>}
+            {post.tagged?.length > 0 && <span> with <Link to={userLink(post.tagged[0])} className='font-semibold hover:underline'>{post.tagged[0].name}</Link>{post.tagged.length > 1 && <> and <button onClick={() => setPeople(post.tagged)} className='font-semibold hover:underline'>{post.tagged.length - 1} other{post.tagged.length > 2 ? 's' : ''}</button></>}</span>}
+            {post.location && <span> at <b>{post.location}</b></span>}
           </p>
           <p className='flex items-center gap-1 text-[13px] text-cx-muted'>
-            <Link to={`/connectify/p/${post._id}`} className='hover:underline'>{longAgo(post.createdAt)}</Link>{post.editedAt && <span>· Edited</span>} · <A.Icon size={12} title={A.label} />
+            {post.pinned && <><BsPinAngleFill size={11} title='Pinned' /> ·</>}
+            <Link to={`/connectify/p/${post._id}`} className='hover:underline'>{longAgo(post.createdAt)}</Link>{post.editedAt && <span>· Edited</span>} · {post.group ? <IoPeople size={12} title='Group' /> : <A.Icon size={12} title={A.label} />}
           </p>
         </div>
         <button onClick={() => setMenu(true)} title='Options' className='flex h-9 w-9 items-center justify-center rounded-full text-cx-muted hover:bg-cx-hover'><IoEllipsisHorizontal size={20} /></button>
@@ -254,11 +278,18 @@ export const CxPostCard = ({ post : initial, onDeleted, expanded = false }) => {
 
       {menu && (
         <ActionSheet tone='cx' onClose={() => setMenu(false)} items={[
+          { label : post.saved ? 'Unsave post' : 'Save post', onClick : async () => { const r = await tool(`/posts/${post._id}/save`, { save : !post.saved }, post.saved ? 'Removed from saved' : 'Saved'); if (r) setPost((p) => ({ ...p, saved : r.saved })) } },
+          { label : post.pinned ? 'Unpin post' : 'Pin post', hidden : !post.mine || !!post.group, onClick : () => tool(`/posts/${post._id}/pin`, { pin : !post.pinned }, post.pinned ? 'Unpinned' : 'Pinned to your profile') },
           { label : 'Edit post', hidden : !post.mine, onClick : () => setEditing(true) },
-          { label : 'Edit audience', hidden : !post.mine, onClick : () => setAudienceMenu(true) },
+          { label : 'Edit audience', hidden : !post.mine || !!post.group, onClick : () => setAudienceMenu(true) },
           { label : post.commentsOff ? 'Turn on commenting' : 'Turn off commenting', hidden : !post.mine, onClick : () => update({ commentsOff : !post.commentsOff }) },
           { label : 'Open post', hidden : expanded, onClick : () => navigate(`/connectify/p/${post._id}`) },
           { label : 'Copy link', onClick : () => copyPostLink(post) },
+          { label : 'Hide post', hidden : post.mine, onClick : () => tool(`/posts/${post._id}/hide`, { hide : true }, 'Post hidden. You\'ll see fewer posts like this.', true) },
+          { label : `Snooze ${first} for 30 days`, hidden : post.mine, onClick : () => tool(`/cx/snooze/${post.author._id}`, { snooze : true }, `You won't see posts from ${first} for 30 days`, true) },
+          { label : `Unfollow ${first}`, hidden : post.mine, onClick : () => tool(`/cx/unfollow/${post.author._id}`, { unfollow : true }, `You'll stay friends with ${first} but won't see their posts`, true) },
+          { label : 'Remove post from group', danger : true, hidden : !post.canModerate || post.mine, onClick : async () => { try { await api.del(`/groups/${post.group._id}/posts/${post._id}`); notify('Post removed'); onDeleted?.(post) } catch (e) { notifyError(e.message) } } },
+          { label : 'Report post', danger : true, hidden : post.mine, onClick : () => setReporting(true) },
           { label : 'Move to trash', danger : true, hidden : !post.mine, onClick : () => setConfirmDelete(true) },
         ]} />
       )}
@@ -275,7 +306,8 @@ export const CxPostCard = ({ post : initial, onDeleted, expanded = false }) => {
         ]} />
       )}
       {editing && <EditPost post={post} onClose={() => setEditing(false)} onSave={async (text) => { if (await update({ text })) setEditing(false) }} />}
-      {people !== undefined && <PeopleModal tone='cx' app='connectify' title='Reactions' people={people} onClose={() => setPeople(undefined)} />}
+      {people !== undefined && <PeopleModal tone='cx' app='connectify' title={people === post.tagged ? 'With' : 'Reactions'} people={people} onClose={() => setPeople(undefined)} />}
+      {reporting && <ReportSheet app='connectify' t='cx' target={{ post : post._id }} onClose={() => setReporting(false)} />}
       {viewer && (
         <Modal onClose={() => setViewer(null)} label='Photos' className='w-full max-w-[1100px]'>
           <MediaCarousel media={viewer.media.slice(viewer.index).concat(viewer.media.slice(0, viewer.index))} aspect={16 / 10} fit='object-contain' />
