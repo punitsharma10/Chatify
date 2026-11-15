@@ -39,6 +39,9 @@ const env = {
     LINK_PREVIEW_ALLOW_PRIVATE : '1',
     // scheduled messages / reminders are checked every second in tests
     SCHEDULER_TICK_MS : '1000',
+    // Explore / Reels fill-up uses a fake Pexels server started by tests/explore.test.js
+    PEXELS_API_KEY : 'test-key',
+    PEXELS_API_BASE : 'http://localhost:5099',
     TEST_API : `http://localhost:${PORT}`
 }
 

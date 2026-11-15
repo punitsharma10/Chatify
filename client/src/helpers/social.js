@@ -108,7 +108,11 @@ export const usePaged = (url, key = 'posts') => {
       const res = await api.get(url + (next.current ? `${sep}before=${enc(next.current)}` : ''))
       if (g !== gen.current) return
       next.current = res.next
-      setState((s) => ({ ...res, items : [...(reset ? [] : s.items), ...(res[key] || [])], loading : false, done : !res.next, error : '' }))
+      setState((s) => {
+        const prev = reset ? [] : s.items
+        const seen = new Set(prev.map((x) => x._id))
+        return { ...res, items : [...prev, ...(res[key] || []).filter((x) => !seen.has(x._id))], loading : false, done : !res.next, error : '' }
+      })
     } catch (e) {
       if (g === gen.current) setState((s) => ({ ...s, loading : false, error : e.message }))
     } finally {

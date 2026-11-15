@@ -213,18 +213,50 @@ const feed = handle(async (req) => {
     return { posts, next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
 })
 
-// Pixify Explore: recent posts from public accounts; Reels: videos
+// Pixify Explore (photos + reels) and Reels (videos), Instagram-style: posts from everyone with a public account
+// (plus people you follow), ranked by likes, comments and plays with newer posts first, and endless: when everyone's
+// posts have been shown, free stock photos / videos from Pexels continue (only if PEXELS_API_KEY is set).
+// Paging cursor (?before=): "p:N" = page N of our posts, "x:K" = page K from Pexels.
+const pexels = require('../helpers/pexels')
 const explore = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, 'pixify')
     const reels = req.query.reels === '1'
-    const publicIds = (await UserModel.find({ 'pixify.private' : { $ne : true }, deletedAt : { $exists : false } }).select('_id').limit(5000).lean()).map((u) => u._id)
-    const authors = reels ? [...publicIds, ...[...ctx.following].map(S.oid), S.oid(ctx.me)] : publicIds.filter((id) => String(id) !== ctx.me)
+    const per = reels ? 8 : 24
+    const cursor = String(req.query.before || 'p:0')
+
+    if (cursor.startsWith('x:')) {
+        const k = Math.max(1, parseInt(cursor.slice(2), 10) || 1)
+        try {
+            const posts = reels ? await pexels.reels(k, per) : await pexels.explore(k, per)
+            return { posts, next : posts.length && k < 500 ? `x:${k + 1}` : null }
+        } catch (error) {
+            console.error('[pexels]', error.message)
+            return { posts : [], next : null }
+        }
+    }
+
+    const page = Math.max(0, parseInt(cursor.slice(2), 10) || 0)
+    const publicIds = (await UserModel.find({ 'pixify.private' : { $ne : true }, deletedAt : { $exists : false } }).select('_id').limit(20000).lean()).map((u) => u._id)
     const muted = new Set((req.user.pixify?.muted || []).map(String))
+    const authors = [...publicIds, ...[...ctx.following].map(S.oid)].filter((id) => String(id) !== ctx.me && !muted.has(String(id)))
     const skip = req.user.pixify?.notInterested || []
-    const raw = await PostModel.find({ app : 'pixify', author : { $in : authors.filter((id) => !muted.has(String(id))) }, archived : { $ne : true }, ...(skip.length ? { _id : { $nin : skip } } : {}), ...(reels ? { isReel : true } : {}), ...beforeFilter(req.query.before) })
-        .sort({ createdAt : -1 }).limit(reels ? 8 : 24).lean()
+    const now = new Date()
+    const raw = await PostModel.aggregate([
+        { $match : { app : 'pixify', author : { $in : authors }, archived : { $ne : true }, ...(skip.length ? { _id : { $nin : skip } } : {}), ...(reels ? { isReel : true } : {}) } },
+        { $addFields : {
+            _score : { $divide : [
+                { $add : [{ $size : { $ifNull : ['$reactions', []] } }, { $multiply : [2, { $ifNull : ['$commentCount', 0] }] }, { $multiply : [0.05, { $ifNull : ['$views', 0] }] }, 1] },
+                { $pow : [{ $add : [{ $divide : [{ $subtract : [now, '$createdAt'] }, 3600000] }, 2] }, 1.2] }
+            ] }
+        } },
+        { $sort : { _score : -1, _id : -1 } },
+        { $skip : page * per },
+        { $limit : per },
+        { $project : { _score : 0 } }
+    ])
     const posts = await S.serializePosts(raw, ctx)
-    return { posts, next : raw.length ? raw[raw.length - 1].createdAt : null }
+    const next = raw.length === per ? `p:${page + 1}` : pexels.enabled() ? 'x:1' : null
+    return { posts, next, ...(pexels.enabled() ? { credit : 'Pexels' } : {}) }
 })
 
 // GET /api/social/users/:id/posts?app=

@@ -100,7 +100,8 @@ export const MediaCarousel = ({ media, aspect, onDoubleClick, className = '', fi
 // thumbnail of the first photo / video (grids, notifications)
 export const MediaThumb = ({ media, className = '' }) => {
   if (!media) return null
-  const src = media.kind === 'video' ? videoPoster(media.url) : thumbUrl(media.url, 400)
+  // outside media (Pexels) brings its own small preview
+  const src = media.poster || (media.kind === 'video' ? videoPoster(media.url) : thumbUrl(media.url, 400))
   return <img src={src} alt='' loading='lazy' draggable={false} className={`object-cover ${className}`} />
 }
 
