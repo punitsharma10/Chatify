@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
-import { IoGridOutline, IoFilmOutline, IoBookmarkOutline, IoLockClosedOutline, IoCameraOutline, IoCopy, IoHeart, IoChatbubble, IoLinkOutline, IoArrowBack, IoSettingsOutline } from 'react-icons/io5'
+import { IoGridOutline, IoFilmOutline, IoBookmarkOutline, IoLockClosedOutline, IoCameraOutline, IoCopy, IoHeart, IoChatbubble, IoLinkOutline, IoArrowBack, IoSettingsOutline, IoPersonCircleOutline, IoMenu, IoPlay } from 'react-icons/io5'
+import { BsPinAngleFill } from 'react-icons/bs'
 import Avatar from '../Avatar'
 import UsernameField, { normalizeUsername } from '../apps/UsernameField'
 import { api, enc, compact, usePaged, useOnVisible } from '../../helpers/social'
@@ -10,6 +11,7 @@ import uploadFile from '../../helpers/uploadFile'
 import { setUser } from '../../redux/userSlice'
 import { notify, notifyError } from '../../helpers/toast'
 import { MediaThumb, PeopleModal, ActionSheet, RichText } from '../social/common'
+import { ReportSheet } from '../social/extras'
 import { FollowButton } from './PixifyHome'
 import { usePixify } from './PixifyLayout'
 
@@ -22,8 +24,10 @@ export const PostGrid = ({ paged, empty }) => {
         {paged.items.map((p) => (
           <Link key={p._id} to={`/pixify/p/${p._id}`} className='group relative aspect-square overflow-hidden bg-px-raised'>
             <MediaThumb media={p.media[0]} className='h-full w-full' />
-            {p.media.length > 1 && <IoCopy className='absolute right-2 top-2 text-white drop-shadow' size={18} />}
-            {p.isReel && <IoFilmOutline className='absolute right-2 top-2 text-white drop-shadow' size={18} />}
+            {p.pinned ? <BsPinAngleFill className='absolute right-2 top-2 text-white drop-shadow' size={16} />
+              : p.media.length > 1 ? <IoCopy className='absolute right-2 top-2 text-white drop-shadow' size={18} />
+              : p.isReel ? <IoFilmOutline className='absolute right-2 top-2 text-white drop-shadow' size={18} /> : null}
+            {p.isReel && p.views > 0 && <span className='absolute bottom-1.5 left-2 flex items-center gap-1 text-xs font-semibold text-white drop-shadow'><IoPlay size={12} />{compact(p.views)}</span>}
             <span className='absolute inset-0 hidden items-center justify-center gap-6 bg-black/35 font-bold text-white group-hover:flex'>
               <span className='flex items-center gap-1.5'><IoHeart size={20} />{compact(p.reactionCount)}</span>
               {!p.commentsOff && <span className='flex items-center gap-1.5'><IoChatbubble size={19} className='-scale-x-100' />{compact(p.commentCount)}</span>}
@@ -47,11 +51,13 @@ const Stat = ({ n, label, onClick }) => (
 const PixifyProfile = () => {
   const { handle } = useParams()
   const navigate = useNavigate()
-  const { version, openPostComposer } = usePixify()
+  const { version, openPostComposer, shareProfile } = usePixify()
   const [profile, setProfile] = useState(undefined)
   const [tab, setTab] = useState('posts')
   const [list, setList] = useState(null) // { title, people }
   const [menu, setMenu] = useState(false)
+  const [myMenu, setMyMenu] = useState(false)
+  const [reporting, setReporting] = useState(false)
 
   const load = () => api.get(`/users/${enc(handle)}?app=pixify`).then((r) => setProfile(r.profile)).catch(() => setProfile(null))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,6 +66,7 @@ const PixifyProfile = () => {
   const isMe = profile?.self
   const posts = usePaged(profile?.canView || isMe ? `/users/${profile?._id}/posts?app=pixify&v=${version}` : null)
   const saved = usePaged(tab === 'saved' && isMe ? `/saved?v=${version}` : null)
+  const tagged = usePaged(tab === 'tagged' && (profile?.canView || isMe) ? `/users/${profile?._id}/posts?app=pixify&tab=tagged&v=${version}` : null)
 
   if (profile === undefined) return <span className='mx-auto mt-24 block h-7 w-7 animate-spin rounded-full border-2 border-px-border border-t-px-muted' />
   if (profile === null) {
@@ -81,6 +88,7 @@ const PixifyProfile = () => {
   }
 
   const reels = { ...posts, items : posts.items.filter((p) => p.isReel) }
+  const toggle = async (url, body, text) => { try { await api.post(url, body); notify(text); load() } catch (e) { notifyError(e.message) } }
 
   return (
     <div className='mx-auto max-w-[935px] pb-10 md:px-5 md:pt-8'>
@@ -88,7 +96,7 @@ const PixifyProfile = () => {
       <div className='flex h-11 items-center gap-3 border-b border-px-border px-4 md:hidden'>
         <button onClick={() => navigate(-1)} title='Back'><IoArrowBack size={22} /></button>
         <span className='flex-1 truncate text-center font-semibold'>{profile.username || profile.name}</span>
-        {isMe ? <button onClick={() => navigate('/pixify/edit')} title='Settings'><IoSettingsOutline size={22} /></button> : <span className='w-6' />}
+        {isMe ? <button onClick={() => setMyMenu(true)} title='Menu'><IoMenu size={24} /></button> : <span className='w-6' />}
       </div>
 
       <header className='flex gap-6 px-4 pt-4 md:gap-20 md:px-12 md:pt-0'>
@@ -102,7 +110,8 @@ const PixifyProfile = () => {
             {isMe ? (
               <>
                 <button onClick={() => navigate('/pixify/edit')} className='h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>Edit profile</button>
-                <button onClick={() => navigate('/pixify/edit')} className='hidden h-8 items-center px-1 md:flex' title='Settings'><IoSettingsOutline size={24} /></button>
+                <button onClick={() => shareProfile(profile)} className='h-8 rounded-lg bg-px-raised px-4 text-sm font-semibold hover:bg-px-border'>Share profile</button>
+                <button onClick={() => setMyMenu(true)} className='hidden h-8 items-center px-1 md:flex' title='Settings and activity'><IoSettingsOutline size={24} /></button>
               </>
             ) : (
               <>
@@ -118,7 +127,7 @@ const PixifyProfile = () => {
             <Stat n={profile.following} label='following' onClick={profile.canView ? () => openList('following') : null} />
           </div>
           <div className='mt-4 hidden text-sm md:block'>
-            <p className='font-semibold'>{profile.name}</p>
+            <p className='font-semibold'>{profile.name}{profile.pronouns && <span className='ml-2 font-normal text-px-muted'>{profile.pronouns}</span>}</p>
             {profile.bio && <RichText text={profile.bio} app='pixify' className='block' linkClass='text-[#00376b] dark:text-[#e0f1ff]' />}
             {profile.website && <a href={profile.website} target='_blank' rel='noopener noreferrer nofollow' className='flex items-center gap-1 font-semibold text-[#00376b] dark:text-[#e0f1ff]'><IoLinkOutline />{profile.website.replace(/^https?:\/\//, '')}</a>}
             {profile.followsMe && <p className='mt-1 text-xs text-px-muted'>Follows you</p>}
@@ -128,7 +137,7 @@ const PixifyProfile = () => {
       </header>
       {/* phone: name + bio below */}
       <div className='mt-3 px-4 text-sm md:hidden'>
-        <p className='font-semibold'>{profile.name}</p>
+        <p className='font-semibold'>{profile.name}{profile.pronouns && <span className='ml-2 font-normal text-px-muted'>{profile.pronouns}</span>}</p>
         {profile.bio && <RichText text={profile.bio} app='pixify' className='block' />}
         {profile.website && <a href={profile.website} target='_blank' rel='noopener noreferrer nofollow' className='font-semibold text-[#00376b] dark:text-[#e0f1ff]'>{profile.website.replace(/^https?:\/\//, '')}</a>}
         {profile.followedBy?.length > 0 && <p className='mt-1 text-xs text-px-muted'>Followed by {profile.followedBy.map((p) => p.username).join(', ')}</p>}
@@ -148,7 +157,7 @@ const PixifyProfile = () => {
       ) : (
         <>
           <nav className='mt-0 flex justify-center gap-14 border-t border-px-border text-xs font-semibold uppercase tracking-widest md:mt-12'>
-            {[['posts', 'Posts', IoGridOutline], ['reels', 'Reels', IoFilmOutline], ...(isMe ? [['saved', 'Saved', IoBookmarkOutline]] : [])].map(([id, label, Icon]) => (
+            {[['posts', 'Posts', IoGridOutline], ['reels', 'Reels', IoFilmOutline], ...(isMe ? [['saved', 'Saved', IoBookmarkOutline]] : []), ['tagged', 'Tagged', IoPersonCircleOutline]].map(([id, label, Icon]) => (
               <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}
                 className={`-mt-px flex items-center gap-1.5 border-t py-4 ${tab === id ? 'border-px-text text-px-text' : 'border-transparent text-px-muted'}`}>
                 <Icon size={14} /><span className='hidden sm:inline'>{label}</span>
@@ -163,6 +172,13 @@ const PixifyProfile = () => {
             </div>
           )} />}
           {tab === 'reels' && <PostGrid paged={reels} empty={<p className='py-14 text-center text-sm text-px-muted'>No reels yet. A post with a single video becomes a reel.</p>} />}
+          {tab === 'tagged' && <PostGrid paged={tagged} empty={(
+            <div className='py-14 text-center'>
+              <span className='mx-auto flex h-16 w-16 items-center justify-center rounded-full border-2 border-px-text'><IoPersonCircleOutline size={34} /></span>
+              <p className='mt-4 text-2xl font-extrabold'>{isMe ? 'Photos of you' : 'No photos'}</p>
+              <p className='mt-2 text-sm text-px-muted'>{isMe ? "When people tag you in photos, they'll appear here." : "Photos they're tagged in will appear here."}</p>
+            </div>
+          )} />}
           {tab === 'saved' && <PostGrid paged={saved} empty={<p className='py-14 text-center text-sm text-px-muted'>Save photos and videos you want to see again. Only you can see what you've saved.</p>} />}
         </>
       )}
@@ -175,8 +191,23 @@ const PixifyProfile = () => {
               : <FollowButton person={p} initial={p.followStatus} />
           ))} />
       )}
+      {reporting && <ReportSheet app='pixify' target={{ user : profile._id }} onClose={() => setReporting(false)} />}
+      {myMenu && (
+        <ActionSheet onClose={() => setMyMenu(false)} items={[
+          { label : 'Edit profile', onClick : () => navigate('/pixify/edit') },
+          { label : 'Your activity (likes)', onClick : () => navigate('/pixify/activity') },
+          { label : 'Archive', onClick : () => navigate('/pixify/archive') },
+          { label : 'Saved', onClick : () => setTab('saved') },
+          { label : 'Favorites', onClick : () => navigate('/pixify/people/favorites') },
+          { label : 'Muted accounts', onClick : () => navigate('/pixify/people/muted') },
+        ]} />
+      )}
       {menu && (
         <ActionSheet onClose={() => setMenu(false)} items={[
+          { label : 'Report', danger : true, onClick : () => setReporting(true) },
+          { label : profile.muted ? 'Unmute' : 'Mute', onClick : () => toggle(`/mute/${profile._id}`, { mute : !profile.muted }, profile.muted ? 'Unmuted' : `Muted ${profile.username}. Their posts won't show in your feed.`) },
+          { label : profile.favorite ? 'Remove from favorites' : 'Add to favorites', hidden : profile.followStatus !== 'active', onClick : () => toggle(`/favorites/${profile._id}`, { favorite : !profile.favorite }, profile.favorite ? 'Removed from Favorites' : 'Added to Favorites') },
+          { label : 'Share this profile', onClick : () => shareProfile(profile) },
           { label : 'Copy profile link', onClick : async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/pixify/u/${profile.username}`); notify('Link copied') } catch { notifyError("Couldn't copy") } } },
           { label : 'Remove follower', danger : true, hidden : !profile.followsMe, onClick : async () => { try { await api.post(`/followers/${profile._id}/remove`); notify('Removed'); load() } catch (e) { notifyError(e.message) } } },
           { label : 'Open chat', onClick : () => navigate('/' + profile._id) },
@@ -192,7 +223,7 @@ export const PixifyEditProfile = () => {
   const me = useSelector((s) => s.user)
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ name : me.name, bio : me.pixify?.bio || '', website : me.pixify?.website || '', private : !!me.pixify?.private })
+  const [form, setForm] = useState({ name : me.name, bio : me.pixify?.bio || '', website : me.pixify?.website || '', pronouns : me.pixify?.pronouns || '', private : !!me.pixify?.private })
   const [username, setUsername] = useState(me.username || '')
   const [usernameState, setUsernameState] = useState('idle')
   const [photo, setPhoto] = useState(me.profile_pic)
@@ -202,7 +233,7 @@ export const PixifyEditProfile = () => {
 
   useEffect(() => {
     // the profile in Redux may be loaded after this screen opens
-    api.get(`/users/${me._id}?app=pixify`).then((r) => setForm((f) => ({ ...f, bio : r.profile.bio, website : r.profile.website, private : r.profile.private }))).catch(() => {})
+    api.get(`/users/${me._id}?app=pixify`).then((r) => setForm((f) => ({ ...f, bio : r.profile.bio, website : r.profile.website, pronouns : r.profile.pronouns || '', private : r.profile.private }))).catch(() => {})
   }, [me._id])
 
   const pick = async (f) => {
@@ -222,7 +253,7 @@ export const PixifyEditProfile = () => {
       const res = await axios.post(`${process.env.REACT_APP_BACKEND_URL}/api/updateuser`, {
         name : form.name, profile_pic : photo, ...(newName !== (me.username || '') ? { username : newName } : {})
       }, { withCredentials : true })
-      const r = await api.post('/profile', { app : 'pixify', bio : form.bio, website : form.website, private : form.private })
+      const r = await api.post('/profile', { app : 'pixify', bio : form.bio, website : form.website, pronouns : form.pronouns, private : form.private })
       dispatch(setUser({ ...res.data.data, pixify : r.data.pixify }))
       notify('Profile saved')
       navigate(`/pixify/u/${res.data.data.username || me._id}`)
@@ -249,6 +280,9 @@ export const PixifyEditProfile = () => {
       <input id='px-name' value={form.name} onChange={(e) => setForm({ ...form, name : e.target.value })} maxLength={50} className='mt-2 h-11 w-full rounded-xl border border-px-border bg-transparent px-4 outline-none focus:border-px-muted' />
 
       <div className='mt-6'><UsernameField tone='px' value={username} current={me.username} nameHint={form.name} onChange={(v, s) => { setUsername(v); setUsernameState(s) }} /></div>
+
+      <label className='mt-6 block font-semibold' htmlFor='px-pronouns'>Pronouns</label>
+      <input id='px-pronouns' value={form.pronouns} onChange={(e) => setForm({ ...form, pronouns : e.target.value })} maxLength={30} placeholder='e.g. she/her' className='mt-2 h-11 w-full rounded-xl border border-px-border bg-transparent px-4 outline-none focus:border-px-muted' />
 
       <label className='mt-6 block font-semibold' htmlFor='px-web'>Website</label>
       <input id='px-web' value={form.website} onChange={(e) => setForm({ ...form, website : e.target.value })} maxLength={200} placeholder='https://' className='mt-2 h-11 w-full rounded-xl border border-px-border bg-transparent px-4 outline-none focus:border-px-muted' />

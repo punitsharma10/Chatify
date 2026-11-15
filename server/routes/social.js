@@ -20,10 +20,67 @@ router.post('/posts/:id/comments', P.addComment)
 router.delete('/comments/:id', P.deleteComment)
 router.post('/comments/:id/like', P.likeComment)
 
+router.post('/posts/:id/pin', P.pinPost)            // pin to profile (up to 3)
+router.post('/posts/:id/archive', P.archivePost)    // Pixify archive
+router.post('/posts/:id/view', P.viewPost)          // Reel plays
+router.post('/posts/:id/hide', P.hidePost)          // Connectify hide / Pixify not interested
+router.post('/comments/:id/pin', P.pinComment)
+router.post('/report', P.report)
+router.get('/report/reasons', P.reportReasons)
+
 // feeds
-router.get('/feed', P.feed)               // ?app=pixify|connectify&before=
+router.get('/feed', P.feed)               // ?app=pixify|connectify&before=&filter=favorites
 router.get('/explore', P.explore)         // Pixify; ?reels=1 for Reels
-router.get('/saved', P.savedPosts)        // Pixify bookmarks
+router.get('/saved', P.savedPosts)        // ?app=pixify|connectify
+router.get('/archive', P.archived)        // my archived Pixify posts
+router.get('/liked', P.liked)             // ?app= posts I liked
+router.get('/hashtags/:tag', P.hashtag)   // ?app=
+router.get('/memories', P.memories)       // Connectify "On this day"
+router.get('/watch', P.watch)             // Connectify videos
+
+// Pixify mute / favorites, Connectify unfollow / snooze / pokes / birthdays
+router.post('/mute/:id', U.mute)
+router.get('/muted', U.mutedList)
+router.post('/favorites/:id', U.favorite)
+router.get('/favorites', U.favorites)
+router.post('/cx/unfollow/:id', U.cxUnfollow)
+router.get('/cx/unfollowed', U.unfollowedList)
+router.post('/cx/snooze/:id', U.snooze)
+router.post('/pokes/:id', U.poke)
+router.get('/pokes', U.pokes)
+router.get('/birthdays', U.birthdays)
+
+// Connectify groups, events, marketplace
+const C = require('../controllers/cx.controller')
+router.get('/groups', C.listGroups)                 // ?tab=yours|discover&q=
+router.post('/groups', C.createGroup)
+router.get('/groups/:id', C.getGroup)
+router.patch('/groups/:id', C.updateGroup)
+router.delete('/groups/:id', C.deleteGroup)
+router.post('/groups/:id/join', C.joinGroup)
+router.post('/groups/:id/cancel', C.cancelRequest)
+router.post('/groups/:id/leave', C.leaveGroup)
+router.get('/groups/:id/members', C.groupMembers)
+router.post('/groups/:id/members/:userId', C.manageMember)
+router.get('/groups/:id/requests', C.groupRequests)
+router.post('/groups/:id/requests/:userId', C.answerRequest)
+router.post('/groups/:id/invite', C.inviteToGroup)
+router.get('/groups/:id/posts', C.groupPosts)
+router.delete('/groups/:id/posts/:postId', C.removeGroupPost)
+router.get('/events', C.listEvents)                 // ?tab=upcoming|going|hosting|past
+router.post('/events', C.createEvent)
+router.get('/events/:id', C.getEvent)
+router.patch('/events/:id', C.updateEvent)
+router.delete('/events/:id', C.deleteEvent)
+router.post('/events/:id/rsvp', C.rsvp)
+router.post('/events/:id/invite', C.inviteToEvent)
+router.get('/events/:id/guests', C.eventGuests)
+router.get('/market', C.listListings)               // ?tab=browse|mine|saved&category=&q=
+router.post('/market', C.createListing)
+router.get('/market/:id', C.getListing)
+router.patch('/market/:id', C.updateListing)
+router.delete('/market/:id', C.deleteListing)
+router.post('/market/:id/save', C.saveListing)
 
 // people
 router.get('/search', U.search)           // ?app=&q=
@@ -52,6 +109,9 @@ router.post('/dm/threads', D.createThread)          // { userIds, name, group }
 router.get('/dm/unread', D.unread)
 router.get('/dm/suggested', D.suggested)
 router.get('/dm/with/:handle', D.withUser)
+router.get('/dm/notes', D.notes)
+router.post('/dm/note', D.setNote)
+router.post('/dm/messages/:id/forward', D.forward)
 router.post('/dm/share', D.share)
 router.get('/dm/threads/:id', D.getThread)
 router.patch('/dm/threads/:id', D.updateGroup)

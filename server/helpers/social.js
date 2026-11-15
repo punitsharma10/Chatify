@@ -75,9 +75,18 @@ const followStatus = async (meId, otherId) => (await FollowModel.findOne({ follo
 
 // everything needed to decide visibility for one viewer, loaded once per request
 const viewerContext = async (viewer, app) => {
-    const ctx = { viewer, me : String(viewer._id), app, following : new Set(), friends : new Set(), saved : new Set((viewer.savedPosts || []).map(String)) }
+    const ctx = {
+        viewer, me : String(viewer._id), app, following : new Set(), friends : new Set(),
+        saved : new Set([...(viewer.savedPosts || []), ...(viewer.connectify?.saved || [])].map(String)),
+        groups : new Set()
+    }
     if (app === 'pixify') ctx.following = new Set(await followingIds(viewer._id))
-    if (app === 'connectify') ctx.friends = new Set(await friendIds(viewer._id))
+    if (app === 'connectify') {
+        ctx.friends = new Set(await friendIds(viewer._id))
+        // groups I'm a member of (to see posts in private groups)
+        const { CxGroupModel } = require('../models/cxGroup.model')
+        ctx.groups = new Set((await CxGroupModel.find({ 'members.userId' : viewer._id }).select('_id').lean()).map((g) => String(g._id)))
+    }
     return ctx
 }
 
@@ -88,6 +97,9 @@ const canSeePost = (post, author, ctx) => {
     if (!post || !author || author.deletedAt) return false
     if (String(author._id) === ctx.me) return true
     if (blockedEitherWay(ctx.viewer, author)) return false
+    if (post.archived) return false
+    // group posts: public groups are open to everyone, private ones to members (checked by the caller via ctx.groups)
+    if (post.group) return !post.groupPrivate || ctx.groups.has(String(post.group))
     if (post.app === 'pixify') return canViewPixifyProfile(author, ctx)
     if (post.audience === 'only_me') return false
     if (post.audience === 'friends') return ctx.friends.has(String(author._id))
@@ -116,11 +128,18 @@ const serializePosts = async (posts, ctx) => {
     const sharedById = Object.fromEntries(sharedPosts.map((p) => [String(p._id), p]))
     // a friend's name among the people who reacted ("Liked by neha and 12 others")
     const reactorIds = posts.flatMap((p) => (p.reactions || []).slice(-20).map((r) => String(r.userId)))
-    const users = await loadUsers([...posts.map((p) => p.author), ...sharedPosts.map((p) => p.author), ...reactorIds])
+    const taggedIds = posts.flatMap((p) => (p.tagged || []).map(String))
+    const users = await loadUsers([...posts.map((p) => p.author), ...sharedPosts.map((p) => p.author), ...reactorIds, ...taggedIds])
+    const groupIds = posts.filter((p) => p.group).map((p) => p.group)
+    const groups = groupIds.length ? Object.fromEntries((await require('../models/cxGroup.model').CxGroupModel.find({ _id : { $in : groupIds } }).select('name privacy cover').lean()).map((g) => [String(g._id), g])) : {}
 
     const one = (p, depth = 0) => {
         const author = users[String(p.author)]
-        if (!canSeePost(p, author, ctx)) return null
+        const group = p.group ? groups[String(p.group)] : null
+        if (p.group && !group) return null
+        if (!canSeePost(group ? { ...p, groupPrivate : group.privacy === 'private' } : p, author, ctx)) return null
+        const mine = String(p.author) === ctx.me
+        const hidden = p.hideLikes && !mine
         const known = ctx.app === 'pixify' ? ctx.following : ctx.friends
         const by = [...(p.reactions || [])].reverse().find((r) => String(r.userId) !== ctx.me && (known.has(String(r.userId))) && users[String(r.userId)])
         const out = {
@@ -137,9 +156,19 @@ const serializePosts = async (posts, ctx) => {
             shareCount : p.shareCount || 0,
             createdAt : p.createdAt,
             editedAt : p.editedAt,
-            mine : String(p.author) === ctx.me,
+            mine,
             saved : ctx.saved.has(String(p._id)),
             ...reactionSummary(p, ctx.me),
+            // "Hide like count": others see "Liked by neha and others" without numbers
+            ...(hidden ? { hideLikes : true, reactionCount : (p.reactions || []).length ? 1 : 0, reactionCounts : {} } : p.hideLikes ? { hideLikes : true } : {}),
+            location : p.location || '',
+            feeling : p.feeling || '',
+            tagged : (p.tagged || []).map((id) => users[String(id)]).filter((u) => u && !u.deletedAt && !blockedEitherWay(ctx.viewer, u)).map((u) => personCard(u, ctx.viewer)),
+            ...(p.pinnedAt ? { pinned : true } : {}),
+            ...(p.archived ? { archived : true } : {}),
+            ...(p.isReel ? { views : p.views || 0 } : {}),
+            ...(p.pinnedComment ? { pinnedComment : String(p.pinnedComment) } : {}),
+            ...(group ? { group : { _id : String(group._id), name : group.name, privacy : group.privacy } } : {}),
             ...(by ? { reactedBy : personCard(users[String(by.userId)], ctx.viewer) } : {})
         }
         if (p.sharedPost && depth === 0) {
@@ -156,7 +185,13 @@ const loadVisiblePost = async (postId, ctx) => {
     const post = await PostModel.findById(postId).lean()
     if (!post) throw new SocialError('This post is no longer available', 404)
     const author = (await loadUsers([post.author]))[String(post.author)]
-    if (!canSeePost(post, author, ctx)) throw new SocialError('This post is no longer available', 404)
+    let check = post
+    if (post.group) {
+        const g = await require('../models/cxGroup.model').CxGroupModel.findById(post.group).select('privacy').lean()
+        if (!g) throw new SocialError('This post is no longer available', 404)
+        check = { ...post, groupPrivate : g.privacy === 'private' }
+    }
+    if (!canSeePost(check, author, ctx)) throw new SocialError('This post is no longer available', 404)
     return { post, author }
 }
 
@@ -167,15 +202,15 @@ const emitTo = (userId, event, data) => {
 }
 
 // create a notification and tell the person's open tabs (never notifies yourself or blocked people)
-const notify = async ({ user, actor, app, type, post, comment, reaction, text = '' }) => {
+const notify = async ({ user, actor, app, type, post, comment, reaction, group, event, text = '' }) => {
     if (!user || String(user) === String(actor)) return
     const [u, a] = await Promise.all([UserModel.findById(user).select('blocked deletedAt').lean(), UserModel.findById(actor).select('blocked').lean()])
     if (!u || u.deletedAt || !a || hasBlocked(u, actor) || hasBlocked(a, user)) return
     // one like / reaction / follow notice per person and post (re-liking doesn't stack)
-    if (['like', 'react', 'follow', 'follow_request', 'friend_request', 'comment_like'].includes(type)) {
-        await NotificationModel.deleteMany({ user, actor, app, type, ...(post ? { post } : {}), ...(comment ? { comment } : {}) })
+    if (['like', 'react', 'follow', 'follow_request', 'friend_request', 'comment_like', 'poke', 'tag', 'group_invite', 'group_join_request', 'event_invite', 'event_going'].includes(type)) {
+        await NotificationModel.deleteMany({ user, actor, app, type, ...(post ? { post } : {}), ...(comment ? { comment } : {}), ...(group ? { group } : {}), ...(event ? { event } : {}) })
     }
-    await NotificationModel.create({ user, actor, app, type, post, comment, reaction, text : String(text).slice(0, 200) })
+    await NotificationModel.create({ user, actor, app, type, post, comment, reaction, group, event, text : String(text).slice(0, 200) })
     emitTo(user, 'social-notification', { app, type })
 }
 

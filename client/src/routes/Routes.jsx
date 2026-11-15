@@ -11,7 +11,7 @@ import JoinGroup from "../components/JoinGroup";
 import PixifyLayout from "../components/pixify/PixifyLayout";
 import PixifyHome from "../components/pixify/PixifyHome";
 import PixifyProfile, { PixifyEditProfile } from "../components/pixify/PixifyProfile";
-import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage } from "../components/pixify/PixifyDiscover";
+import { PixifyExplore, PixifyReels, PixifySearch, PixifyPostPage, PixifyTag, PixifyArchive, PixifyActivity, PixifyPeopleList } from "../components/pixify/PixifyDiscover";
 import PixifyNotifications from "../components/pixify/PixifyNotifications";
 import PixifyDirect, { DirectEmpty, DirectOpenUser } from "../components/pixify/direct/PixifyDirect";
 import DirectThread from "../components/pixify/direct/DirectThread";
@@ -57,6 +57,10 @@ const router = createBrowserRouter([
                         { path : 'edit', element : <PixifyEditProfile/> },
                         { path : 'p/:postId', element : <PixifyPostPage/> },
                         { path : 'u/:handle', element : <PixifyProfile/> },
+                        { path : 'tags/:tag', element : <PixifyTag/> },
+                        { path : 'archive', element : <PixifyArchive/> },
+                        { path : 'activity', element : <PixifyActivity/> },
+                        { path : 'people/:list', element : <PixifyPeopleList/> },
                         // Pixify Direct: Instagram-style messages (separate from Chats)
                         {
                             path : 'direct',

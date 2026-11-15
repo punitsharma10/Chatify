@@ -96,14 +96,35 @@ const userSchema = new mongoose.Schema({
     pixify : {
         private : { type : Boolean, default : false },
         bio : { type : String, default : '', maxlength : 150 },
-        website : { type : String, default : '', maxlength : 200 }
+        website : { type : String, default : '', maxlength : 200 },
+        pronouns : { type : String, default : '', maxlength : 30 },
+        // accounts whose posts / stories I don't want in my feed (they aren't told)
+        muted : { type : [{ type : mongoose.Schema.ObjectId, ref : 'User' }], default : undefined },
+        // "Favorites": their posts first, and a Favorites-only feed
+        favorites : { type : [{ type : mongoose.Schema.ObjectId, ref : 'User' }], default : undefined },
+        // "Not interested" on Explore
+        notInterested : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined },
+        // Direct "Note": a short line shown above the inbox for 24 hours
+        note : { text : { type : String, maxlength : 60 }, at : Date }
     },
     // Connectify profile
     connectify : {
         bio : { type : String, default : '', maxlength : 101 },
         cover_pic : { type : String, default : '' },
         city : { type : String, default : '', maxlength : 60 },
-        work : { type : String, default : '', maxlength : 80 }
+        work : { type : String, default : '', maxlength : 80 },
+        education : { type : String, default : '', maxlength : 80 },
+        hometown : { type : String, default : '', maxlength : 60 },
+        relationship : { type : String, default : '' },
+        website : { type : String, default : '', maxlength : 200 },
+        // birthday month/day (year optional, never shown)
+        birthday : { month : Number, day : Number, year : Number },
+        // posts I hid from my feed, friends I unfollowed (still friends), people snoozed until a date
+        hiddenPosts : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined },
+        unfollowed : { type : [{ type : mongoose.Schema.ObjectId, ref : 'User' }], default : undefined },
+        snoozed : { type : [{ userId : mongoose.Schema.ObjectId, until : Date, _id : false }], default : undefined },
+        // saved Connectify posts (newest last)
+        saved : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined }
     },
     // Pixify posts I bookmarked (newest last)
     savedPosts : { type : [{ type : mongoose.Schema.ObjectId, ref : 'Post' }], default : undefined },

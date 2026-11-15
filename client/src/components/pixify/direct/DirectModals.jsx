@@ -137,7 +137,8 @@ export const NewMessageModal = ({ onClose }) => {
 }
 
 // paper plane on a post / reel / profile: send to people or conversations, with an optional note
-export const ShareSheet = ({ post, profile, onClose, onChats }) => {
+// forwardId: forward that Direct message instead of sharing a post / profile
+export const ShareSheet = ({ post, profile, forwardId, onClose, onChats }) => {
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState([]) // [{ key, threadId | userId, label }]
   const [text, setText] = useState('')
@@ -157,12 +158,10 @@ export const ShareSheet = ({ post, profile, onClose, onChats }) => {
   const send = async () => {
     setBusy(true)
     try {
-      const res = await api.post('/dm/share', {
-        ...(post ? { postId : post._id } : { profileId : profile._id }),
-        threadIds : picked.filter((x) => x.threadId).map((x) => x.threadId),
-        userIds : picked.filter((x) => x.userId).map((x) => x.userId),
-        text,
-      })
+      const targets = { threadIds : picked.filter((x) => x.threadId).map((x) => x.threadId), userIds : picked.filter((x) => x.userId).map((x) => x.userId) }
+      const res = forwardId
+        ? await api.post(`/dm/messages/${forwardId}/forward`, targets)
+        : await api.post('/dm/share', { ...(post ? { postId : post._id } : { profileId : profile._id }), ...targets, text })
       onClose()
       if (res.failed?.length) notifyError(res.failed[0])
       else notify('Sent')
@@ -181,7 +180,7 @@ export const ShareSheet = ({ post, profile, onClose, onChats }) => {
   return (
     <Modal onClose={onClose} label='Share' closeButton={false} className='flex h-[85dvh] w-screen flex-col overflow-hidden rounded-t-2xl bg-px-bg text-px-text max-sm:fixed max-sm:bottom-0 sm:h-[min(620px,85vh)] sm:w-[548px] sm:rounded-xl'>
       <div className='relative flex h-[48px] shrink-0 items-center justify-center'>
-        <p className='font-bold'>Share</p>
+        <p className='font-bold'>{forwardId ? 'Forward' : 'Share'}</p>
         <button onClick={onClose} className='absolute right-2 p-1' aria-label='Close'><IoClose size={26} /></button>
       </div>
       <div className='mx-4 mb-2 flex shrink-0 items-center gap-2 rounded-lg bg-px-raised px-3'>
@@ -205,10 +204,10 @@ export const ShareSheet = ({ post, profile, onClose, onChats }) => {
       <div className='shrink-0 border-t border-px-border'>
         {picked.length ? (
           <div className='p-4'>
-            <input value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder='Write a message...' className='mb-3 w-full bg-transparent text-sm outline-none placeholder:text-px-muted' />
+            {!forwardId && <input value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} placeholder='Write a message...' className='mb-3 w-full bg-transparent text-sm outline-none placeholder:text-px-muted' />}
             <button onClick={send} disabled={busy} className='h-11 w-full rounded-lg bg-px-blue font-semibold text-white hover:bg-[#1877f2] disabled:opacity-50'>{picked.length > 1 ? 'Send separately' : 'Send'}</button>
           </div>
-        ) : (
+        ) : forwardId ? <p className='px-4 py-4 text-center text-sm text-px-muted'>Choose who to forward to.</p> : (
           <div className='flex justify-center gap-6 px-4 py-3'>
             <button onClick={copy} className='flex w-20 flex-col items-center gap-1.5 text-xs'><span className='flex h-12 w-12 items-center justify-center rounded-full bg-px-raised'><IoLinkOutline size={24} /></span>Copy link</button>
             {post && onChats && <button onClick={() => { onClose(); onChats(post) }} className='flex w-20 flex-col items-center gap-1.5 text-xs'><span className='flex h-12 w-12 items-center justify-center rounded-full bg-px-raised'><IoChatbubbleEllipsesOutline size={24} /></span>Chats</button>}

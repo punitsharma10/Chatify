@@ -17,6 +17,7 @@ const TEXT = {
   follow : 'started following you.',
   follow_request : 'requested to follow you.',
   follow_accept : 'accepted your follow request.',
+  tag : 'tagged you in a post.',
 }
 
 const group = (date) => {

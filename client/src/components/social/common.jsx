@@ -21,7 +21,7 @@ export const RichText = ({ text, app, limit = 0, className = '', linkClass = '' 
     <span className={`whitespace-pre-wrap break-words ${className}`}>
       {splitMentions(shown).map((part, i) => {
         if (part.startsWith('@') && part.length > 3) return <Link key={i} to={`/${app}/u/${part.slice(1).toLowerCase().replace(/\.+$/, '')}`} onClick={(e) => e.stopPropagation()} className={linkClass}>{part}</Link>
-        if (part.startsWith('#') && part.length > 1) return <span key={i} className={linkClass}>{part}</span>
+        if (part.startsWith('#') && part.length > 1) return <Link key={i} to={`/${app}/tags/${encodeURIComponent(part.slice(1).toLowerCase())}`} onClick={(e) => e.stopPropagation()} className={linkClass}>{part}</Link>
         return <React.Fragment key={i}>{part}</React.Fragment>
       })}
       {cut && <>… <button onClick={(e) => { e.stopPropagation(); setOpen(true) }} className='opacity-60 hover:opacity-100'>more</button></>}

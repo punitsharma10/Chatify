@@ -1,12 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { IoHeartOutline, IoHeart, IoChatbubbleOutline, IoPaperPlaneOutline, IoBookmarkOutline, IoBookmark, IoEllipsisHorizontal } from 'react-icons/io5'
+import { IoHeartOutline, IoHeart, IoChatbubbleOutline, IoPaperPlaneOutline, IoBookmarkOutline, IoBookmark, IoEllipsisHorizontal, IoPerson } from 'react-icons/io5'
+import { BsPinAngleFill } from 'react-icons/bs'
 import Avatar from '../Avatar'
 import { api, shortAgo, compact } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { MediaCarousel, RichText, ActionSheet, PeopleModal, copyPostLink, pixifyAspect } from '../social/common'
+import { ReportSheet } from '../social/extras'
 import { usePixify } from './PixifyLayout'
+
+const QUICK_EMOJIS = ['❤️', '🙌', '🔥', '👏', '😢', '😍', '😮', '😂']
+
+// "Goa, India" under the username
+const PlaceLine = ({ post }) => (post.location
+  ? <Link to={`/pixify/search?q=${encodeURIComponent(post.location)}`} className='block truncate text-xs hover:opacity-60'>{post.location}</Link>
+  : null)
+
+// person icon on the photo: shows who's tagged
+export const TaggedBadge = ({ post }) => {
+  const [open, setOpen] = useState(false)
+  if (!post.tagged?.length) return null
+  return (
+    <>
+      <button onClick={(e) => { e.stopPropagation(); setOpen(true) }} title='Tagged people' className='absolute bottom-3 left-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/70 text-white'><IoPerson size={14} /></button>
+      {open && <PeopleModal title='Tagged' app='pixify' people={post.tagged} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
 
 const userLink = (p) => `/pixify/u/${p.username || p._id}`
 export const handleOf = (p) => p?.username || p?.name || ''
@@ -55,21 +76,33 @@ export const HeartBurst = ({ k }) => (k ? (
   </span>
 ) : null)
 
-export const PostMenu = ({ actions, onClose, onEdit, goToPost = true }) => {
-  const { post, remove, update } = actions
+export const PostMenu = ({ actions, onClose, onEdit, goToPost = true, onHidden }) => {
+  const { post, remove, update, setPost } = actions
   const navigate = useNavigate()
   const { sendToChat } = usePixify()
   const [confirm, setConfirm] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const [unfollowed, setUnfollowed] = useState(false)
   if (confirm) {
     return <ActionSheet title='Delete post?' onClose={onClose} items={[{ label : 'Delete', danger : true, onClick : remove }]} />
   }
+  if (reporting) return <ReportSheet app='pixify' target={{ post : post._id }} onClose={onClose} />
+  const tool = async (url, body, okText) => {
+    try { const r = await api.post(url, body); if (r.post) setPost((p) => ({ ...p, ...r.post })); if (okText) notify(okText); return r } catch (e) { notifyError(e.message) }
+  }
   return (
     <ActionSheet onClose={onClose} items={[
+      { label : 'Report', danger : true, hidden : post.mine, keepOpen : true, onClick : () => setReporting(true) },
       { label : 'Delete', danger : true, hidden : !post.mine, keepOpen : true, onClick : () => setConfirm(true) },
+      { label : post.archived ? 'Show on profile' : 'Archive', hidden : !post.mine, onClick : async () => { await tool(`/posts/${post._id}/archive`, { archive : !post.archived }, post.archived ? 'Shown on your profile' : 'Archived. Only you can see it.'); if (!post.archived) onHidden?.(post) } },
+      { label : post.pinned ? 'Unpin from profile' : 'Pin to your profile', hidden : !post.mine || post.archived, onClick : () => tool(`/posts/${post._id}/pin`, { pin : !post.pinned }, post.pinned ? 'Unpinned' : 'Pinned to your profile') },
+      { label : post.hideLikes ? 'Unhide like count' : 'Hide like count', hidden : !post.mine, onClick : () => update({ hideLikes : !post.hideLikes }) },
       { label : 'Edit', hidden : !post.mine, onClick : onEdit },
       { label : post.commentsOff ? 'Turn on commenting' : 'Turn off commenting', hidden : !post.mine, onClick : () => update({ commentsOff : !post.commentsOff }) },
       { label : 'Unfollow', danger : true, hidden : post.mine || unfollowed, onClick : async () => { try { await api.post(`/follow/${post.author._id}`, { follow : false }); setUnfollowed(true); notify(`Unfollowed ${handleOf(post.author)}`) } catch (e) { notifyError(e.message) } } },
+      { label : 'Add to favorites', hidden : post.mine, onClick : () => tool(`/favorites/${post.author._id}`, { favorite : true }, `Added ${handleOf(post.author)} to Favorites`) },
+      { label : 'Mute', hidden : post.mine, onClick : async () => { await tool(`/mute/${post.author._id}`, { mute : true }, `Muted ${handleOf(post.author)}. Their posts won't show in your feed.`); onHidden?.(post) } },
+      { label : 'Not interested', hidden : post.mine || !onHidden, onClick : async () => { await tool(`/posts/${post._id}/hide`, { hide : true }, "You'll see fewer posts like this"); onHidden?.(post) } },
       { label : 'Go to post', hidden : !goToPost, onClick : () => navigate(`/pixify/p/${post._id}`) },
       { label : 'Share to...', onClick : () => sendToChat(post) },
       { label : 'Copy link', onClick : () => copyPostLink(post) },
@@ -80,15 +113,17 @@ export const PostMenu = ({ actions, onClose, onEdit, goToPost = true }) => {
 
 export const EditCaption = ({ actions, onClose }) => {
   const [text, setText] = useState(actions.post.text)
+  const [location, setLocation] = useState(actions.post.location || '')
   return (
     <div className='fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4' onClick={onClose}>
       <div className='w-full max-w-md animate-pop rounded-xl bg-px-bg text-px-text' onClick={(e) => e.stopPropagation()}>
         <header className='flex h-12 items-center justify-between border-b border-px-border px-4'>
           <button onClick={onClose} className='text-sm'>Cancel</button>
           <span className='font-semibold'>Edit info</span>
-          <button onClick={async () => { if (await actions.update({ text })) onClose() }} className='text-sm font-semibold text-px-blue'>Done</button>
+          <button onClick={async () => { if (await actions.update({ text, location })) onClose() }} className='text-sm font-semibold text-px-blue'>Done</button>
         </header>
         <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={2200} rows={6} className='w-full resize-none bg-transparent p-4 text-[15px] outline-none' />
+        <input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={100} placeholder='Add location' className='w-full border-t border-px-border bg-transparent px-4 py-3 text-sm outline-none placeholder:text-px-muted' />
       </div>
     </div>
   )
@@ -113,6 +148,10 @@ export const Likes = ({ post }) => {
   const [people, setPeople] = useState(undefined)
   const open = () => { setPeople(null); api.get(`/posts/${post._id}/reactions`).then((r) => setPeople(r.people)).catch(() => setPeople([])) }
   if (!post.reactionCount) return <p className='text-sm'>Be the first to <span className='font-semibold'>like this</span></p>
+  // the author chose to hide the count: names only
+  if (post.hideLikes && !post.mine) {
+    return <p className='text-sm'>Liked by {post.reactedBy ? <span className='font-semibold'>{handleOf(post.reactedBy)}</span> : null}{post.reactedBy ? ' and ' : ''}<span className='font-semibold'>others</span></p>
+  }
   return (
     <>
       <button onClick={open} className='text-left text-sm font-semibold'>
@@ -126,7 +165,7 @@ export const Likes = ({ post }) => {
 }
 
 // feed card
-export const PostCard = ({ post : initial, onDeleted }) => {
+export const PostCard = ({ post : initial, onDeleted, onHidden }) => {
   const navigate = useNavigate()
   const actions = usePostActions(initial, { onDeleted })
   const { post, doubleTap, heart } = actions
@@ -153,14 +192,18 @@ export const PostCard = ({ post : initial, onDeleted }) => {
       <header className='flex items-center gap-3 px-3 py-2.5 sm:px-0'>
         <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
         <div className='min-w-0 flex-1 text-sm'>
-          <Link to={userLink(post.author)} className='font-semibold hover:opacity-60'>{handleOf(post.author)}</Link>
-          <span className='text-px-muted'> • {shortAgo(post.createdAt)}</span>
+          <p className='truncate'>
+            <Link to={userLink(post.author)} className='font-semibold hover:opacity-60'>{handleOf(post.author)}</Link>
+            <span className='text-px-muted'> • {shortAgo(post.createdAt)}</span>
+          </p>
+          <PlaceLine post={post} />
         </div>
         <button onClick={() => setMenu(true)} title='More options' className='p-1 hover:opacity-60'><IoEllipsisHorizontal size={20} /></button>
       </header>
       <div className='relative overflow-hidden sm:rounded'>
         <MediaCarousel media={post.media} aspect={pixifyAspect(post)} onDoubleClick={doubleTap} />
         <HeartBurst k={heart} />
+        <TaggedBadge post={post} />
       </div>
       <div className='px-3 sm:px-0'>
         <ActionBar actions={actions} onComment={() => input.current?.focus()} />
@@ -185,7 +228,7 @@ export const PostCard = ({ post : initial, onDeleted }) => {
           </form>
         )}
       </div>
-      {menu && <PostMenu actions={actions} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} />}
+      {menu && <PostMenu actions={actions} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} onHidden={onHidden} />}
       {editing && <EditCaption actions={actions} onClose={() => setEditing(false)} />}
     </article>
   )
@@ -193,15 +236,17 @@ export const PostCard = ({ post : initial, onDeleted }) => {
 
 /* ---------------- full post (page) ---------------- */
 
-const Comment = ({ c, onReply, onDelete, onLike }) => (
+const Comment = ({ c, onReply, onDelete, onLike, onPin }) => (
   <div className='group flex gap-3 py-2'>
     <Link to={userLink(c.author)} className='shrink-0'><Avatar width={32} height={32} name={c.author.name} imageUrl={c.author.profile_pic} /></Link>
     <div className='min-w-0 flex-1 text-sm'>
-      <p><Link to={userLink(c.author)} className='mr-1 font-semibold'>{handleOf(c.author)}</Link><RichText text={c.text} app='pixify' linkClass='text-[#00376b] dark:text-[#e0f1ff]' /></p>
+      {c.pinned && <p className='mb-0.5 flex items-center gap-1 text-xs text-px-muted'><BsPinAngleFill size={11} /> Pinned</p>}
+      <p><Link to={userLink(c.author)} className='mr-1 font-semibold'>{handleOf(c.author)}</Link>{c.byAuthor && <span className='mr-1 text-xs text-px-muted'>· Author</span>}<RichText text={c.text} app='pixify' linkClass='text-[#00376b] dark:text-[#e0f1ff]' /></p>
       <p className='mt-1 flex gap-3 text-xs text-px-muted'>
         <span>{shortAgo(c.createdAt)}</span>
         {c.likeCount > 0 && <span className='font-semibold'>{c.likeCount} like{c.likeCount > 1 ? 's' : ''}</span>}
         {onReply && <button onClick={() => onReply(c)} className='font-semibold'>Reply</button>}
+        {c.canPin && onPin && <button onClick={() => onPin(c)} className='hidden font-semibold group-hover:inline max-md:inline'>{c.pinned ? 'Unpin' : 'Pin'}</button>}
         {c.canDelete && <button onClick={() => onDelete(c)} className='hidden font-semibold group-hover:inline'>Delete</button>}
       </p>
     </div>
@@ -254,6 +299,18 @@ export const PostView = ({ post : initial, onDeleted }) => {
     try { await api.post(`/comments/${c._id}/like`, { like }) } catch (e) { notifyError(e.message) }
   }
 
+  const pinComment = async (c) => {
+    const pin = !c.pinned
+    try {
+      await api.post(`/comments/${c._id}/pin`, { pin })
+      setComments((list) => {
+        const next = list.map((x) => ({ ...x, pinned : pin && x._id === c._id }))
+        return [...next.filter((x) => x.pinned), ...next.filter((x) => !x.pinned)]
+      })
+      notify(pin ? 'Comment pinned' : 'Comment unpinned')
+    } catch (e) { notifyError(e.message) }
+  }
+
   const top = (comments || []).filter((c) => !c.parent)
   const repliesOf = (id) => (comments || []).filter((c) => c.parent === id)
 
@@ -261,17 +318,18 @@ export const PostView = ({ post : initial, onDeleted }) => {
     <div className='flex w-full flex-col bg-px-bg md:h-[min(88dvh,820px)] md:flex-row md:border md:border-px-border'>
       <header className='flex items-center gap-3 border-b border-px-border px-4 py-3 md:hidden'>
         <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
-        <Link to={userLink(post.author)} className='flex-1 text-sm font-semibold'>{handleOf(post.author)}</Link>
+        <div className='min-w-0 flex-1 text-sm'><Link to={userLink(post.author)} className='font-semibold'>{handleOf(post.author)}</Link><PlaceLine post={post} /></div>
         <button onClick={() => setMenu(true)} title='More options'><IoEllipsisHorizontal size={20} /></button>
       </header>
       <div className='relative flex min-w-0 items-center justify-center bg-black md:flex-[1.4]'>
         <MediaCarousel media={post.media} aspect={pixifyAspect(post)} fit='object-contain' onDoubleClick={doubleTap} className='md:h-full md:!aspect-auto' />
         <HeartBurst k={heart} />
+        <TaggedBadge post={post} />
       </div>
       <div className='flex min-h-0 w-full flex-col md:w-[400px] md:max-w-[45%] md:border-l md:border-px-border'>
         <header className='hidden items-center gap-3 border-b border-px-border px-4 py-3 md:flex'>
           <Link to={userLink(post.author)}><Avatar width={32} height={32} name={post.author.name} imageUrl={post.author.profile_pic} /></Link>
-          <Link to={userLink(post.author)} className='flex-1 text-sm font-semibold hover:opacity-60'>{handleOf(post.author)}</Link>
+          <div className='min-w-0 flex-1 text-sm'><Link to={userLink(post.author)} className='font-semibold hover:opacity-60'>{handleOf(post.author)}</Link><PlaceLine post={post} /></div>
           <button onClick={() => setMenu(true)} title='More options'><IoEllipsisHorizontal size={20} /></button>
         </header>
         <div className='order-2 min-h-0 flex-1 overflow-y-auto px-4 py-2 md:order-none'>
@@ -288,7 +346,7 @@ export const PostView = ({ post : initial, onDeleted }) => {
           {comments?.length === 0 && !post.commentsOff && <div className='py-10 text-center'><p className='text-xl font-bold'>No comments yet.</p><p className='mt-1 text-sm text-px-muted'>Start the conversation.</p></div>}
           {top.map((c) => (
             <div key={c._id}>
-              <Comment c={c} onReply={post.commentsOff ? null : reply} onDelete={del} onLike={likeComment} />
+              <Comment c={c} onReply={post.commentsOff ? null : reply} onDelete={del} onLike={likeComment} onPin={pinComment} />
               {repliesOf(c._id).length > 0 && (
                 <div className='ml-11'>
                   <button onClick={() => setOpen((o) => ({ ...o, [c._id]: !o[c._id] }))} className='flex items-center gap-3 py-1 text-xs font-semibold text-px-muted'>
@@ -308,13 +366,18 @@ export const PostView = ({ post : initial, onDeleted }) => {
         {post.commentsOff
           ? <p className='order-3 border-t border-px-border px-4 py-3 text-center text-sm text-px-muted'>Commenting has been turned off.</p>
           : (
-            <form onSubmit={send} className='order-3 flex items-center gap-3 border-t border-px-border px-4 py-2'>
+            <>
+            <div className='order-3 flex justify-between border-t border-px-border px-4 pt-2 text-2xl'>
+              {QUICK_EMOJIS.map((e) => <button key={e} type='button' onClick={() => { setText((t) => t + e); input.current?.focus() }} className='transition-transform hover:scale-125'>{e}</button>)}
+            </div>
+            <form onSubmit={send} className='order-3 flex items-center gap-3 px-4 py-2'>
               <Avatar width={28} height={28} name={me.name} imageUrl={me.profile_pic} />
               <input ref={input} value={text} onChange={(e) => { setText(e.target.value); if (!e.target.value) setReplyTo(null) }} maxLength={2200}
                 placeholder={replyTo ? `Reply to ${handleOf(replyTo.author)}…` : 'Add a comment…'} aria-label='Add a comment'
                 className='min-w-0 flex-1 bg-transparent py-2 text-sm outline-none placeholder:text-px-muted' />
               <button disabled={!text.trim()} className='text-sm font-semibold text-px-blue disabled:opacity-40'>Post</button>
             </form>
+            </>
           )}
       </div>
       {menu && <PostMenu actions={actions} goToPost={false} onClose={() => setMenu(false)} onEdit={() => setEditing(true)} />}

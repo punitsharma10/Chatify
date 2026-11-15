@@ -90,7 +90,9 @@ const PixifyHome = () => {
   const user = useSelector((s) => s.user)
   const navigate = useNavigate()
   const { version, openPostComposer } = usePixify()
-  const feed = usePaged(`/feed?app=pixify&v=${version}`)
+  // Instagram's feed switch: everyone you follow, or only Favorites
+  const [filter, setFilter] = useState('following')
+  const feed = usePaged(`/feed?app=pixify&v=${version}${filter === 'favorites' ? '&filter=favorites' : ''}`)
   const more = useOnVisible(feed.loadMore, !feed.done && !feed.loading)
   const suggestions = useSuggestions()
   const [explore, setExplore] = useState(null)
@@ -105,8 +107,16 @@ const PixifyHome = () => {
     <div className='mx-auto flex max-w-[935px] justify-center gap-16 px-0 md:pt-6 lg:px-4'>
       <div className='w-full max-w-[470px]'>
         <StoriesBar />
+        <div className='flex gap-2 px-3 pb-1 pt-3 sm:px-0'>
+          {[['following', 'Following'], ['favorites', 'Favorites']].map(([id, label]) => (
+            <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`h-8 rounded-lg px-3 text-sm font-semibold ${filter === id ? 'bg-px-text text-px-bg' : 'bg-px-raised hover:bg-px-border'}`}>{label}</button>
+          ))}
+        </div>
+        {filter === 'favorites' && !feed.loading && !feed.items.length && (
+          <p className='px-6 py-12 text-center text-sm text-px-muted'>Add people to Favorites from the ••• menu on their posts or profile. Their posts show here.</p>
+        )}
         <div className='mt-2'>
-          {feed.items.map((p) => <PostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id))} />)}
+          {feed.items.map((p) => <PostCard key={p._id} post={p} onDeleted={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id))} onHidden={(d) => feed.setItems((list) => list.filter((x) => x._id !== d._id && (d.author._id !== x.author._id || x.mine)))} />)}
         </div>
         {feed.loading && [0, 1].map((i) => (
           <div key={i} className='mb-6 px-3 sm:px-0'>
@@ -126,7 +136,7 @@ const PixifyHome = () => {
           </div>
         )}
 
-        {empty && !feed.error && (
+        {empty && !feed.error && filter === 'following' && (
           <>
             <div className='flex flex-col items-center px-6 pb-6 pt-8 text-center'>
               <h2 className='text-xl font-bold'>Welcome to Pixify, {user.username || user.name}</h2>

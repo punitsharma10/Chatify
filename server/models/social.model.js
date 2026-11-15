@@ -33,12 +33,33 @@ const postSchema = new mongoose.Schema({
     isReel : { type : Boolean, default : false },
     // turn off comments (Pixify "Turn off commenting")
     commentsOff : { type : Boolean, default : false },
-    editedAt : Date
+    editedAt : Date,
+    // "Add location" (Pixify) / "Check in" (Connectify)
+    location : { type : String, default : '', maxlength : 100 },
+    // Connectify: "feeling happy 😊" / "celebrating 🎉"
+    feeling : { type : String, default : '', maxlength : 60 },
+    // people tagged in the photo (Pixify) / "with" friends (Connectify)
+    tagged : { type : [{ type : ObjectId, ref : 'User' }], default : undefined },
+    // Pixify: hide the like count from others
+    hideLikes : { type : Boolean, default : false },
+    // pinned to the top of the author's profile
+    pinnedAt : { type : Date },
+    // Pixify: archived posts are only visible to the author (Archive)
+    archived : { type : Boolean, default : false },
+    // the comment the author pinned to the top
+    pinnedComment : { type : ObjectId, ref : 'Comment' },
+    // Reels plays
+    views : { type : Number, default : 0 },
+    // Connectify: posted inside a group
+    group : { type : ObjectId, ref : 'CxGroup' }
 }, { timestamps : true })
 
 postSchema.index({ app : 1, author : 1, createdAt : -1 })
 postSchema.index({ app : 1, createdAt : -1 })
 postSchema.index({ app : 1, isReel : 1, createdAt : -1 })
+postSchema.index({ tagged : 1, createdAt : -1 }, { partialFilterExpression : { 'tagged.0' : { $exists : true } } })
+postSchema.index({ group : 1, createdAt : -1 }, { partialFilterExpression : { group : { $exists : true } } })
+postSchema.index({ 'reactions.userId' : 1 })
 
 const commentSchema = new mongoose.Schema({
     post : { type : ObjectId, ref : 'Post', required : true },
@@ -74,7 +95,7 @@ friendshipSchema.index({ to : 1, status : 1 })
 friendshipSchema.index({ from : 1, status : 1 })
 
 // What happened to you in Pixify / Connectify (likes, comments, follows, friend requests, ...)
-const NOTIFICATION_TYPES = ['like', 'react', 'comment', 'reply', 'comment_like', 'mention', 'follow', 'follow_request', 'follow_accept', 'friend_request', 'friend_accept', 'share']
+const NOTIFICATION_TYPES = ['like', 'react', 'comment', 'reply', 'comment_like', 'mention', 'follow', 'follow_request', 'follow_accept', 'friend_request', 'friend_accept', 'share', 'tag', 'poke', 'group_invite', 'group_post', 'group_join_request', 'group_join_accept', 'event_invite', 'event_going', 'listing_message']
 const notificationSchema = new mongoose.Schema({
     user : { type : ObjectId, ref : 'User', required : true },   // who it's for
     actor : { type : ObjectId, ref : 'User', required : true },  // who did it
@@ -83,6 +104,9 @@ const notificationSchema = new mongoose.Schema({
     post : { type : ObjectId, ref : 'Post' },
     comment : { type : ObjectId, ref : 'Comment' },
     reaction : { type : String },
+    // Connectify groups / events
+    group : { type : ObjectId, ref : 'CxGroup' },
+    event : { type : ObjectId, ref : 'CxEvent' },
     text : { type : String, default : '', maxlength : 200 }, // comment preview
     read : { type : Boolean, default : false }
 }, { timestamps : true })
@@ -91,6 +115,24 @@ notificationSchema.index({ user : 1, app : 1, createdAt : -1 })
 // old notifications are cleaned up after 90 days
 notificationSchema.index({ createdAt : 1 }, { expireAfterSeconds : 90 * 24 * 3600 })
 
+// Connectify pokes: one per pair at a time (poking back clears yours)
+const pokeSchema = new mongoose.Schema({
+    from : { type : ObjectId, ref : 'User', required : true },
+    to : { type : ObjectId, ref : 'User', required : true }
+}, { timestamps : true })
+pokeSchema.index({ from : 1, to : 1 }, { unique : true })
+pokeSchema.index({ to : 1, createdAt : -1 })
+
+// report of a post, comment or account in Pixify / Connectify (reviewed by the app owner)
+const socialReportSchema = new mongoose.Schema({
+    reporter : { type : ObjectId, ref : 'User', required : true },
+    app : { type : String, enum : ['pixify', 'connectify'] },
+    post : { type : ObjectId, ref : 'Post' },
+    comment : { type : ObjectId, ref : 'Comment' },
+    user : { type : ObjectId, ref : 'User' },
+    reason : { type : String, default : '', maxlength : 200 }
+}, { timestamps : true })
+
 module.exports = {
     REACTIONS,
     NOTIFICATION_TYPES,
@@ -98,5 +140,7 @@ module.exports = {
     CommentModel : mongoose.model('Comment', commentSchema),
     FollowModel : mongoose.model('Follow', followSchema),
     FriendshipModel : mongoose.model('Friendship', friendshipSchema),
-    NotificationModel : mongoose.model('Notification', notificationSchema)
+    NotificationModel : mongoose.model('Notification', notificationSchema),
+    PokeModel : mongoose.model('Poke', pokeSchema),
+    SocialReportModel : mongoose.model('SocialReport', socialReportSchema)
 }

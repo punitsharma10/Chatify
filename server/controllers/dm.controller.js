@@ -637,6 +637,59 @@ const react = handle(async (req) => {
     return { message : (await serializeMessages([updated], me))[0] }
 })
 
+// POST /dm/messages/:id/forward { threadIds, userIds }
+const forward = handle(async (req) => {
+    const me = await loadMe(req)
+    const { msg } = await loadOwnable(req.params.id, me)
+    if (msg.kind === 'system') throw fail("This message can't be forwarded")
+    const threadIds = [...new Set((Array.isArray(req.body.threadIds) ? req.body.threadIds : []).map(String))]
+    const userIds = [...new Set((Array.isArray(req.body.userIds) ? req.body.userIds : []).map(String))]
+    if (!threadIds.length && !userIds.length) throw fail('Choose who to send to')
+    if (threadIds.length + userIds.length > 20) throw fail('Send to up to 20 at a time')
+    const body = { kind : msg.kind }
+    for (const k of ['text', 'media', 'audio', 'post', 'profile']) if (msg[k] !== undefined && msg[k] !== null && !(Array.isArray(msg[k]) && !msg[k].length)) body[k] = msg[k]
+    const targets = []
+    for (const id of threadIds) targets.push(await loadThread(id, me._id))
+    for (const u of await peopleFrom(userIds, me)) targets.push(await openWith(me, u))
+    let sent = 0
+    const failed = []
+    for (const t of targets) {
+        try { await assertCanSend(t, me); await createMessage(t._id, me, { ...body }); sent++ } catch (error) {
+            if (!(error instanceof S.SocialError)) throw error
+            failed.push(error.message)
+        }
+    }
+    if (!sent && failed.length) throw fail(failed[0])
+    return { sent, failed }
+})
+
+/* ---------- Notes (a short line above the inbox for 24 hours) ---------- */
+
+const NOTE_TTL = 24 * 3600 * 1000
+
+// POST /dm/note { text } ('' removes it)
+const setNote = handle(async (req) => {
+    const text = typeof req.body.text === 'string' ? req.body.text.trim() : ''
+    if (text.length > 60) throw fail('Notes can have up to 60 characters')
+    await UserModel.updateOne({ _id : req.user._id }, text ? { $set : { 'pixify.note' : { text, at : new Date() } } } : { $unset : { 'pixify.note' : 1 } })
+    return { note : text ? { text, at : new Date() } : null }
+})
+
+// GET /dm/notes -> my note + notes of people I follow who follow me back
+const notes = handle(async (req) => {
+    const me = await loadMe(req)
+    const [following, followers] = await Promise.all([S.followingIds(me._id), S.followerIds(me._id)])
+    const mutual = following.filter((id) => followers.includes(id))
+    const since = new Date(Date.now() - NOTE_TTL)
+    const users = await UserModel.find({ _id : { $in : mutual.map(S.oid) }, 'pixify.note.at' : { $gt : since }, deletedAt : { $exists : false } }).select(USER_FIELDS).lean()
+    const mine = me.pixify?.note?.at && new Date(me.pixify.note.at) > since ? me.pixify.note : null
+    return {
+        mine : mine ? { text : mine.text, at : mine.at } : null,
+        notes : users.filter((u) => !S.blockedEitherWay(me, u)).sort((a, b) => new Date(b.pixify.note.at) - new Date(a.pixify.note.at))
+            .map((u) => ({ person : S.personCard(u, me), text : u.pixify.note.text, at : u.pixify.note.at }))
+    }
+})
+
 // is there an accepted Pixify conversation between these two? (lets them call each other)
 const acceptedBetween = async (a, b) => {
     const t = await DmThreadModel.findOne({ pairKey : pairKeyOf(a, b) }).select('members lastMessageAt').lean()
@@ -646,7 +699,7 @@ const acceptedBetween = async (a, b) => {
 module.exports = {
     listThreads, unread, withUser, createThread, getThread, listMessages, sendMessage, share, suggested,
     markRead, accept, hide, mute, updateGroup, addMembers, removeMember, setAdmin, leave,
-    editMessage, unsend, react,
+    editMessage, unsend, react, forward, setNote, notes,
     // used elsewhere
     unreadCounts, acceptedBetween, loadThread, memberOf
 }

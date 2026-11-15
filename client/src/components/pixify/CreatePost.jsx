@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
-import { IoArrowBack, IoImagesOutline, IoClose, IoChevronBack, IoChevronForward } from 'react-icons/io5'
+import { IoArrowBack, IoImagesOutline, IoClose, IoChevronBack, IoChevronForward, IoLocationOutline, IoPersonAddOutline, IoChevronForward as Chevron } from 'react-icons/io5'
 import Avatar from '../Avatar'
 import { api, uploadMedia, checkMediaFile } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { ConnectifyMark } from '../apps/AppLogos'
 import { Modal } from '../social/common'
+import { FILTERS, filterCss, applyFilter, PeoplePicker } from '../social/extras'
 
 const Toggle = ({ on, onChange, label, hint, icon }) => (
   <label className='flex cursor-pointer items-center gap-3 py-3'>
@@ -28,6 +29,11 @@ const CreatePost = ({ onClose, onPosted }) => {
   const [caption, setCaption] = useState('')
   const [alsoConnectify, setAlsoConnectify] = useState(false)
   const [commentsOff, setCommentsOff] = useState(false)
+  const [hideLikes, setHideLikes] = useState(false)
+  const [location, setLocation] = useState('')
+  const [tagged, setTagged] = useState([])
+  const [tagging, setTagging] = useState(false)
+  const [filters, setFilters] = useState({}) // file url -> filter id
   const [progress, setProgress] = useState(null)
   const [dragging, setDragging] = useState(false)
   const input = useRef(null)
@@ -58,8 +64,13 @@ const CreatePost = ({ onClose, onPosted }) => {
     if (!files.length || progress !== null) return
     setProgress(0)
     try {
-      const media = await uploadMedia(files.map((f) => f.file), setProgress)
-      const res = await api.post('/posts', { app : 'pixify', text : caption, media, commentsOff, ...(alsoConnectify ? { crossPost : ['connectify'] } : {}) })
+      // bake the chosen filter into each photo before uploading
+      const ready = await Promise.all(files.map((f) => (f.kind === 'image' ? applyFilter(f.file, filters[f.url]) : f.file)))
+      const media = await uploadMedia(ready, setProgress)
+      const res = await api.post('/posts', {
+        app : 'pixify', text : caption, media, commentsOff, hideLikes, location, tagged : tagged.map((p) => p._id),
+        ...(alsoConnectify ? { crossPost : ['connectify'] } : {}),
+      })
       notify(res.crossPosted?.length ? 'Shared to Pixify and Connectify' : 'Your post has been shared')
       onPosted(res.post)
     } catch (e) {
@@ -99,7 +110,7 @@ const CreatePost = ({ onClose, onPosted }) => {
           <div className='relative flex aspect-square w-full shrink-0 items-center justify-center bg-black sm:aspect-auto sm:w-[60%]'>
             {cur.kind === 'video'
               ? <video key={cur.url} src={cur.url} controls playsInline className='max-h-full max-w-full' />
-              : <img src={cur.url} alt='' className='max-h-full max-w-full object-contain' />}
+              : <img src={cur.url} alt='' className='max-h-full max-w-full object-contain' style={{ filter : filterCss(filters[cur.url]) }} />}
             {index > 0 && <button onClick={() => setIndex(index - 1)} className='absolute left-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white'><IoChevronBack /></button>}
             {index < files.length - 1 && <button onClick={() => setIndex(index + 1)} className='absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white'><IoChevronForward /></button>}
             {/* strip of selected items */}
@@ -127,8 +138,34 @@ const CreatePost = ({ onClose, onPosted }) => {
               placeholder='Write a caption… Use @ to mention people and # for hashtags'
               className='mx-4 mt-3 resize-none bg-transparent text-[15px] outline-none placeholder:text-px-muted' />
             <p className='px-4 text-right text-xs text-px-muted'>{caption.length.toLocaleString()}/2,200</p>
-            <div className='mt-2 border-t border-px-border px-4'>
+            {/* Filters (photos) */}
+            {cur.kind === 'image' && (
+              <div className='border-t border-px-border px-4 py-3'>
+                <p className='mb-2 text-sm font-semibold'>Filters</p>
+                <div className='flex gap-3 overflow-x-auto pb-1 scrollbar-none'>
+                  {FILTERS.map((f) => {
+                    const active = (filters[cur.url] || 'normal') === f.id
+                    return (
+                      <button key={f.id} onClick={() => setFilters((x) => ({ ...x, [cur.url] : f.id }))} className='flex shrink-0 flex-col items-center gap-1'>
+                        <img src={cur.url} alt='' className={`h-16 w-16 rounded object-cover ${active ? 'ring-2 ring-px-blue' : ''}`} style={{ filter : f.css }} />
+                        <span className={`text-[11px] ${active ? 'font-semibold text-px-blue' : 'text-px-muted'}`}>{f.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            <label className='flex items-center gap-3 border-t border-px-border px-4 py-3'>
+              <input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={100} placeholder='Add location' className='min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-px-text' />
+              <IoLocationOutline size={20} />
+            </label>
+            <button onClick={() => setTagging(true)} className='flex items-center gap-3 border-t border-px-border px-4 py-3 text-left text-[15px]'>
+              <span className='min-w-0 flex-1 truncate'>{tagged.length ? `Tagged: ${tagged.map((p) => p.username || p.name).join(', ')}` : 'Tag people'}</span>
+              <IoPersonAddOutline size={20} /><Chevron size={16} className='text-px-muted' />
+            </button>
+            <div className='border-t border-px-border px-4'>
               <Toggle on={alsoConnectify} onChange={setAlsoConnectify} icon={<ConnectifyMark size={26} />} label='Also share to Connectify' hint='Your friends see it there too' />
+              <Toggle on={hideLikes} onChange={setHideLikes} label='Hide like count on this post' hint='Only you will see the total number of likes' />
               <Toggle on={commentsOff} onChange={setCommentsOff} label='Turn off commenting' hint='You can change this later from the ••• menu' />
             </div>
           </div>
@@ -136,6 +173,7 @@ const CreatePost = ({ onClose, onPosted }) => {
       )}
 
       <input ref={input} type='file' accept='image/*,video/*' multiple className='hidden' onChange={(e) => { add(e.target.files || []); e.target.value = '' }} />
+      {tagging && <PeoplePicker title='Tag people' app='pixify' initial={tagged} onClose={() => setTagging(false)} onDone={(list) => { setTagged(list); setTagging(false) }} />}
     </Modal>
   )
 }

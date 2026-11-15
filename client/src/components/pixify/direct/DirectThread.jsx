@@ -16,7 +16,7 @@ import { socketCall } from '../../../helpers/socketCall'
 import { notify, notifyError } from '../../../helpers/toast'
 import { Modal, MediaThumb } from '../../social/common'
 import { useThread, activeLabel, stampLabel, systemText, isJumboEmoji } from './directData'
-import { ThreadAvatar } from './DirectModals'
+import { ThreadAvatar, ShareSheet } from './DirectModals'
 import DirectDetails from './DirectDetails'
 
 // One Pixify Direct conversation, Instagram-style: blue bubbles for you, grey for them, hover actions,
@@ -157,7 +157,7 @@ const ReactionBar = ({ onPick, onMore, align }) => (
   </div>
 )
 
-const Message = ({ m, mine, me, sender, showSender, showAvatar, onReply, onEdit, onReact, onUnsend, onOpenMedia, onShowReactions }) => {
+const Message = ({ m, mine, me, sender, showSender, showAvatar, onReply, onEdit, onReact, onUnsend, onOpenMedia, onShowReactions, onForward }) => {
   const [bar, setBar] = useState(false)
   const [menu, setMenu] = useState(false)
   const [picker, setPicker] = useState(false)
@@ -202,6 +202,7 @@ const Message = ({ m, mine, me, sender, showSender, showAvatar, onReply, onEdit,
           <div className={`absolute bottom-full z-20 mb-1 w-44 animate-pop overflow-hidden rounded-xl bg-px-bg py-1 text-sm text-px-text shadow-[0_4px_16px_rgba(0,0,0,0.2)] ring-1 ring-px-border ${mine ? 'right-0' : 'left-0'}`} onClick={(e) => e.stopPropagation()}>
             <p className='px-4 py-2 text-xs text-px-muted'>{moment(m.createdAt).format('ddd h:mm A')}</p>
             {m.kind === 'text' && <button onClick={() => { setMenu(false); navigator.clipboard?.writeText(m.text).then(() => notify('Copied')) }} className='block w-full px-4 py-2 text-left hover:bg-px-hover'>Copy</button>}
+            <button onClick={() => { setMenu(false); onForward(m) }} className='block w-full px-4 py-2 text-left hover:bg-px-hover'>Forward</button>
             {canEdit && <button onClick={() => { setMenu(false); onEdit(m) }} className='block w-full px-4 py-2 text-left hover:bg-px-hover'>Edit</button>}
             {mine && <button onClick={() => { setMenu(false); onUnsend(m) }} className='block w-full px-4 py-2 text-left text-[#ed4956] hover:bg-px-hover'>Unsend</button>}
           </div>
@@ -248,6 +249,7 @@ const Message = ({ m, mine, me, sender, showSender, showAvatar, onReply, onEdit,
             {[
               { label : 'Reply', onClick : () => onReply(m) },
               { label : 'Copy', hidden : m.kind !== 'text', onClick : () => navigator.clipboard?.writeText(m.text).then(() => notify('Copied')) },
+              { label : 'Forward', onClick : () => onForward(m) },
               { label : 'Edit', hidden : !canEdit, onClick : () => onEdit(m) },
               { label : 'Unsend', hidden : !mine, danger : true, onClick : () => onUnsend(m) },
               { label : 'Cancel', onClick : () => {} },
@@ -360,6 +362,7 @@ const DirectThread = () => {
   const [viewer, setViewer] = useState(null)
   const [reactionsOf, setReactionsOf] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [forwarding, setForwarding] = useState(null)
 
   useEffect(() => { setDetails(false); setReply(null); setEditing(null) }, [threadId])
   useEffect(() => { if (t.error === 'removed') navigate('/pixify/direct', { replace : true }) }, [t.error, navigate])
@@ -488,7 +491,7 @@ const DirectThread = () => {
       <div key={m.clientId || m._id} className={sameAsPrev ? 'mt-0.5' : 'mt-2'}>
         <Message m={m} me={me} mine={m.from === me} sender={people[m.from]} showSender={thread.isGroup && m.from !== me && !sameAsPrev} showAvatar={!sameAsNext}
           onReply={replyTo} onEdit={(x) => { setReply(null); setEditing(x) }} onReact={react} onUnsend={unsend}
-          onOpenMedia={(media, index) => setViewer({ media, index })} onShowReactions={setReactionsOf} />
+          onOpenMedia={(media, index) => setViewer({ media, index })} onShowReactions={setReactionsOf} onForward={setForwarding} />
       </div>
     )
   })
@@ -573,6 +576,7 @@ const DirectThread = () => {
         <DirectDetails thread={thread} onClose={() => setDetails(false)} onThread={t.setThread}
           onDelete={deleteChat} onBlock={() => block(!thread.blockedByMe)} />
       )}
+      {forwarding && <ShareSheet forwardId={forwarding._id} onClose={() => setForwarding(null)} />}
       {viewer && <MediaViewer media={viewer.media} index={viewer.index} onClose={() => setViewer(null)} />}
       {reactionsOf && (
         <Modal onClose={() => setReactionsOf(null)} label='Reactions' closeButton={false} className='w-[min(400px,92vw)] overflow-hidden rounded-xl bg-px-bg text-px-text'>

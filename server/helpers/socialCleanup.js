@@ -16,6 +16,23 @@ module.exports = async (userId) => {
         FriendshipModel.deleteMany({ $or : [{ from : userId }, { to : userId }] }),
         NotificationModel.deleteMany({ $or : [{ user : userId }, { actor : userId }, { post : { $in : posts } }] })
     ])
+    // Connectify groups / events / marketplace / pokes
+    const { CxGroupModel, CxEventModel, ListingModel } = require('../models/cxGroup.model')
+    const { PokeModel } = require('../models/social.model')
+    await Promise.all([
+        ListingModel.deleteMany({ seller : userId }),
+        ListingModel.updateMany({ savedBy : userId }, { $pull : { savedBy : userId } }),
+        CxEventModel.deleteMany({ host : userId }),
+        CxEventModel.updateMany({}, { $pull : { going : userId, interested : userId, invited : userId } }),
+        PokeModel.deleteMany({ $or : [{ from : userId }, { to : userId }] }),
+        CxGroupModel.updateMany({ 'requests.userId' : userId }, { $pull : { requests : { userId } } })
+    ])
+    for (const g of await CxGroupModel.find({ 'members.userId' : userId }).lean()) {
+        const rest = g.members.filter((m) => String(m.userId) !== String(userId))
+        if (!rest.length) { await CxGroupModel.deleteOne({ _id : g._id }); await PostModel.deleteMany({ group : g._id }); continue }
+        if (!rest.some((m) => m.role === 'admin')) rest[0].role = 'admin'
+        await CxGroupModel.updateOne({ _id : g._id }, { $set : { members : rest } })
+    }
     // Pixify Direct: their one-to-one threads go; they leave groups (an empty group is removed)
     const { DmThreadModel, DmMessageModel } = require('../models/dm.model')
     const pairs = (await DmThreadModel.find({ isGroup : false, 'members.userId' : userId }).select('_id').lean()).map((t) => t._id)

@@ -3,6 +3,8 @@ import { useSelector } from 'react-redux'
 import { Outlet, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom'
 import { IoCreateOutline, IoChevronBack, IoPaperPlaneOutline, IoNotificationsOffOutline } from 'react-icons/io5'
 import { useOnVisible, useSocialUnread, shortAgo, api } from '../../../helpers/social'
+import Avatar from '../../Avatar'
+import { Modal } from '../../social/common'
 import { notifyError } from '../../../helpers/toast'
 import { useThreadList, listPreview } from './directData'
 import { NewMessageModal, ThreadAvatar } from './DirectModals'
@@ -24,6 +26,57 @@ const ThreadRow = ({ t, active, onClick }) => (
     {t.unread && !t.muted && <span className='h-2 w-2 shrink-0 rounded-full bg-px-blue' aria-label='Unread' />}
   </button>
 )
+
+// Notes: a short line (60 characters) above the inbox for 24 hours, seen by followers you follow back
+const NoteEditor = ({ current, onClose, onSaved }) => {
+  const user = useSelector((s) => s.user)
+  const [text, setText] = useState(current?.text || '')
+  const save = async (value) => {
+    try { const r = await api.post('/dm/note', { text : value }); onSaved(r.note); onClose() } catch (e) { notifyError(e.message) }
+  }
+  return (
+    <Modal onClose={onClose} label='New note' closeButton={false} className='w-[min(400px,94vw)] overflow-hidden rounded-xl bg-px-bg text-px-text'>
+      <div className='relative flex h-12 items-center justify-center border-b border-px-border'>
+        <button onClick={onClose} className='absolute left-3 text-sm'>Cancel</button>
+        <p className='font-bold'>New note</p>
+        <button onClick={() => save(text)} disabled={!text.trim()} className='absolute right-3 text-sm font-semibold text-px-blue disabled:opacity-40'>Share</button>
+      </div>
+      <div className='flex flex-col items-center gap-3 px-6 py-6'>
+        <div className='relative'>
+          <Avatar width={88} height={88} name={user.name} imageUrl={user.profile_pic} />
+          <input autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={60} placeholder='Share a thought...'
+            className='absolute -top-8 left-1/2 w-56 -translate-x-1/2 rounded-2xl bg-px-raised px-3 py-2 text-center text-sm shadow outline-none placeholder:text-px-muted' />
+        </div>
+        <p className='text-xs text-px-muted'>{text.length}/60 · Shared with followers you follow back for 24 hours</p>
+        {current && <button onClick={() => save('')} className='text-sm font-semibold text-[#ed4956]'>Delete note</button>}
+      </div>
+    </Modal>
+  )
+}
+
+const NotesRow = () => {
+  const user = useSelector((s) => s.user)
+  const [data, setData] = useState({ mine : null, notes : [] })
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { api.get('/dm/notes').then(setData).catch(() => {}) }, [])
+  return (
+    <div className='flex gap-4 overflow-x-auto px-6 pb-2 pt-9 scrollbar-none max-md:px-4'>
+      <button onClick={() => setEditing(true)} className='relative flex w-[74px] shrink-0 flex-col items-center'>
+        <span className='absolute -top-7 left-1/2 max-w-[90px] -translate-x-1/2 truncate rounded-2xl bg-px-raised px-2.5 py-1.5 text-[11px] shadow'>{data.mine?.text || 'Note...'}</span>
+        <Avatar width={64} height={64} name={user.name} imageUrl={user.profile_pic} />
+        <span className='mt-1 text-xs text-px-muted'>Your note</span>
+      </button>
+      {data.notes.map((n) => (
+        <div key={n.person._id} className='relative flex w-[74px] shrink-0 flex-col items-center' title={n.text}>
+          <span className='absolute -top-7 left-1/2 max-w-[90px] -translate-x-1/2 truncate rounded-2xl bg-px-raised px-2.5 py-1.5 text-[11px] shadow'>{n.text}</span>
+          <Avatar width={64} height={64} name={n.person.name} imageUrl={n.person.profile_pic} />
+          <span className='mt-1 w-full truncate text-center text-xs'>{n.person.username || n.person.name}</span>
+        </div>
+      ))}
+      {editing && <NoteEditor current={data.mine} onClose={() => setEditing(false)} onSaved={(note) => setData((d) => ({ ...d, mine : note }))} />}
+    </div>
+  )
+}
 
 const ThreadList = ({ folder, activeId, onNew }) => {
   const navigate = useNavigate()
@@ -51,6 +104,7 @@ const ThreadList = ({ folder, activeId, onNew }) => {
           </>
         )}
       </div>
+      {!requests && <NotesRow />}
       {requests ? (
         <p className='px-6 pb-3 text-[13px] text-px-muted max-md:px-4'>Open a chat to see who sent it. They won't know you've seen it until you accept.</p>
       ) : (

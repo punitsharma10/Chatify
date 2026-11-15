@@ -1,5 +1,7 @@
 const UserModel = require('../models/user.model')
-const { PostModel, FollowModel, FriendshipModel, NotificationModel } = require('../models/social.model')
+const { PostModel, FollowModel, FriendshipModel, NotificationModel, PokeModel } = require('../models/social.model')
+
+const RELATIONSHIPS = ['', 'single', 'in_a_relationship', 'engaged', 'married', 'its_complicated', 'separated', 'divorced', 'widowed']
 const { isAllowedMediaUrl, isValidId, escapeRegex } = require('../helpers/chat')
 const S = require('../helpers/social')
 const { handle, appOf } = require('./posts.controller')
@@ -20,8 +22,9 @@ const profile = handle(async (req) => {
     const isMe = String(user._id) === me
     const base = {
         ...S.personCard(user, req.user),
-        posts : await PostModel.countDocuments({ app, author : user._id })
+        posts : await PostModel.countDocuments({ app, author : user._id, archived : { $ne : true }, group : { $exists : false } })
     }
+    const has = (list) => (list || []).some((id) => String(id) === String(user._id))
     if (app === 'pixify') {
         const [followers, following, status, followsMe] = await Promise.all([
             FollowModel.countDocuments({ following : user._id, status : 'active' }),
@@ -38,7 +41,9 @@ const profile = handle(async (req) => {
                 ...base,
                 bio : user.pixify?.bio || '',
                 website : user.pixify?.website || '',
+                pronouns : user.pixify?.pronouns || '',
                 private : !!user.pixify?.private,
+                ...(isMe ? {} : { muted : has(req.user.pixify?.muted), favorite : has(req.user.pixify?.favorites) }),
                 followers, following,
                 followStatus : status,              // 'active' | 'pending' | null
                 followsMe : followsMe === 'active',
@@ -57,6 +62,18 @@ const profile = handle(async (req) => {
             cover_pic : user.connectify?.cover_pic || '',
             city : user.connectify?.city || '',
             work : user.connectify?.work || '',
+            education : user.connectify?.education || '',
+            hometown : user.connectify?.hometown || '',
+            relationship : user.connectify?.relationship || '',
+            website : user.connectify?.website || '',
+            // birthday is shown to friends (day and month only)
+            ...((isMe || status === 'friends') && user.connectify?.birthday?.month ? { birthday : { month : user.connectify.birthday.month, day : user.connectify.birthday.day, ...(isMe && user.connectify.birthday.year ? { year : user.connectify.birthday.year } : {}) } } : {}),
+            ...(isMe ? {} : {
+                unfollowed : has(req.user.connectify?.unfollowed),
+                snoozedUntil : (req.user.connectify?.snoozed || []).find((s) => String(s.userId) === String(user._id) && new Date(s.until) > Date.now())?.until || null,
+                pokedByMe : !!(await PokeModel.exists({ from : req.user._id, to : user._id })),
+                pokedMe : !!(await PokeModel.exists({ from : user._id, to : req.user._id }))
+            }),
             friendCount : friends.length,
             mutualFriends : mutualIds.length,
             friendStatus : status,
@@ -83,10 +100,33 @@ const updateProfile = handle(async (req) => {
             else throw new S.SocialError('Enter a valid website link')
         }
         if (req.body.private !== undefined) set['pixify.private'] = !!req.body.private
+        str('pronouns', 30, 'pixify.pronouns')
     } else {
         str('bio', 101, 'connectify.bio')
         str('city', 60, 'connectify.city')
         str('work', 80, 'connectify.work')
+        str('education', 80, 'connectify.education')
+        str('hometown', 60, 'connectify.hometown')
+        str('website', 200, 'connectify.website')
+        if (set['connectify.website'] && !/^https?:\/\//i.test(set['connectify.website'])) {
+            if (/^[^\s]+\.[^\s]+$/.test(set['connectify.website'])) set['connectify.website'] = 'https://' + set['connectify.website']
+            else throw new S.SocialError('Enter a valid website link')
+        }
+        if (req.body.relationship !== undefined) {
+            if (!RELATIONSHIPS.includes(req.body.relationship)) throw new S.SocialError('Invalid relationship status')
+            set['connectify.relationship'] = req.body.relationship
+        }
+        if (req.body.birthday !== undefined) {
+            const b = req.body.birthday
+            if (b === null) set['connectify.birthday'] = {}
+            else {
+                const month = Number(b?.month), day = Number(b?.day), year = b?.year ? Number(b.year) : undefined
+                const valid = Number.isInteger(month) && month >= 1 && month <= 12 && Number.isInteger(day) && day >= 1 && day <= new Date(2024, month, 0).getDate() &&
+                    (year === undefined || (Number.isInteger(year) && year >= 1900 && year <= new Date().getFullYear()))
+                if (!valid) throw new S.SocialError('Enter a valid birthday')
+                set['connectify.birthday'] = { month, day, ...(year ? { year } : {}) }
+            }
+        }
         if (req.body.cover_pic !== undefined) {
             if (req.body.cover_pic && !isAllowedMediaUrl(req.body.cover_pic)) throw new S.SocialError('Invalid cover photo')
             set['connectify.cover_pic'] = req.body.cover_pic || ''
@@ -325,7 +365,98 @@ const search = handle(async (req) => {
     }))
     // people I know first, then exact username match, then the rest
     const rank = (p) => (p.username === q.toLowerCase() ? 0 : 2) - (p.following || p.isFriend ? 1 : 0) - (p.isContact ? 0.5 : 0)
-    return { people : people.sort((a, b) => rank(a) - rank(b)).slice(0, 20) }
+    return { people : people.sort((a, b) => rank(a) - rank(b)).slice(0, 20), tags : await hashtagsLike(app, q.replace(/^#/, '')) }
+})
+
+// hashtags used in recent posts that start with `q`, most used first
+const hashtagsLike = async (app, q) => {
+    if (!/^[\p{L}\p{N}_]{1,60}$/u.test(q)) return []
+    const posts = await PostModel.find({ app, archived : { $ne : true }, text : { $regex : `#${escapeRegex(q)}`, $options : 'i' } }).sort({ createdAt : -1 }).limit(300).select('text').lean()
+    const counts = {}
+    const prefix = q.toLowerCase()
+    for (const p of posts) {
+        for (const m of p.text.matchAll(/#([\p{L}\p{N}_]{1,60})/gu)) {
+            const t = m[1].toLowerCase()
+            if (t.startsWith(prefix)) counts[t] = (counts[t] || 0) + 1
+        }
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([tag, count]) => ({ tag, count }))
+}
+
+/* ---------- Pixify: mute, favorites ---------- */
+
+const toggleIn = async (req, field, on) => {
+    const user = await findOther(req)
+    if (String(user._id) === String(req.user._id)) throw new S.SocialError("That's you!")
+    await UserModel.updateOne({ _id : req.user._id }, on ? { $addToSet : { [field] : user._id } } : { $pull : { [field] : user._id } })
+    return user
+}
+
+// POST /mute/:id { mute } -> their posts leave my feed (they aren't told)
+const mute = handle(async (req) => { await toggleIn(req, 'pixify.muted', req.body.mute !== false); return { muted : req.body.mute !== false } })
+
+// POST /favorites/:id { favorite }  (up to 50)
+const favorite = handle(async (req) => {
+    const on = req.body.favorite !== false
+    if (on && (req.user.pixify?.favorites || []).length >= 50) throw new S.SocialError('You can add up to 50 favorites')
+    await toggleIn(req, 'pixify.favorites', on)
+    return { favorite : on }
+})
+
+// GET /favorites | /muted -> people in that list
+const listOf = (field) => handle(async (req) => {
+    const ids = (field === 'favorites' ? req.user.pixify?.favorites : field === 'muted' ? req.user.pixify?.muted : req.user.connectify?.unfollowed) || []
+    const users = await S.loadUsers(ids)
+    return { people : ids.map((id) => users[String(id)]).filter((u) => u && !u.deletedAt && !S.blockedEitherWay(req.user, u)).map((u) => S.personCard(u, req.user)) }
+})
+
+/* ---------- Connectify: unfollow, snooze, pokes, birthdays ---------- */
+
+// POST /cx/unfollow/:id { unfollow } -> stay friends, stop seeing their posts
+const cxUnfollow = handle(async (req) => { await toggleIn(req, 'connectify.unfollowed', req.body.unfollow !== false); return { unfollowed : req.body.unfollow !== false } })
+
+// POST /cx/snooze/:id { snooze } -> hide their posts for 30 days
+const snooze = handle(async (req) => {
+    const user = await findOther(req)
+    await UserModel.updateOne({ _id : req.user._id }, { $pull : { 'connectify.snoozed' : { userId : user._id } } })
+    if (req.body.snooze === false) return { snoozedUntil : null }
+    const until = new Date(Date.now() + 30 * 24 * 3600 * 1000)
+    await UserModel.updateOne({ _id : req.user._id }, { $push : { 'connectify.snoozed' : { userId : user._id, until } } })
+    return { snoozedUntil : until }
+})
+
+// POST /pokes/:id -> poke a friend (poking back clears their poke)
+const poke = handle(async (req) => {
+    const user = await findOther(req)
+    if (String(user._id) === String(req.user._id)) throw new S.SocialError("You can't poke yourself")
+    if (!(await S.friendIds(req.user._id)).includes(String(user._id))) throw new S.SocialError('You can only poke friends')
+    if (await PokeModel.exists({ from : req.user._id, to : user._id })) throw new S.SocialError(`You already poked ${user.name.split(' ')[0]}`)
+    await PokeModel.deleteOne({ from : user._id, to : req.user._id })
+    await PokeModel.create({ from : req.user._id, to : user._id })
+    await S.notify({ user : user._id, actor : req.user._id, app : 'connectify', type : 'poke' })
+    return { poked : true }
+})
+
+// GET /pokes -> friends who poked me (newest first)
+const pokes = handle(async (req) => {
+    const list = await PokeModel.find({ to : req.user._id }).sort({ createdAt : -1 }).limit(50).lean()
+    const users = await S.loadUsers(list.map((p) => p.from))
+    return { people : list.map((p) => users[String(p.from)] && !S.blockedEitherWay(req.user, users[String(p.from)]) ? { ...S.personCard(users[String(p.from)], req.user), at : p.createdAt } : null).filter(Boolean) }
+})
+
+// GET /birthdays -> friends' birthdays today and in the next 30 days
+const birthdays = handle(async (req) => {
+    const ids = await S.friendIds(req.user._id)
+    const users = await UserModel.find({ _id : { $in : ids.map(S.oid) }, 'connectify.birthday.month' : { $exists : true }, deletedAt : { $exists : false } }).select('-password -devices -chatLockCode').lean()
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const list = users.filter((u) => !S.blockedEitherWay(req.user, u)).map((u) => {
+        const { month, day } = u.connectify.birthday
+        let next = new Date(today.getFullYear(), month - 1, day)
+        if (next < today) next = new Date(today.getFullYear() + 1, month - 1, day)
+        return { ...S.personCard(u, req.user), month, day, inDays : Math.round((next - today) / 86400000) }
+    }).filter((b) => b.inDays <= 30).sort((a, b) => a.inDays - b.inDays)
+    return { today : list.filter((b) => b.inDays === 0), upcoming : list.filter((b) => b.inDays > 0) }
 })
 
 /* ---------- notifications ---------- */
@@ -338,6 +469,13 @@ const notifications = handle(async (req) => {
         PostModel.find({ _id : { $in : list.filter((n) => n.post).map((n) => n.post) } }).select('media text background app').lean()
     ])
     const postById = Object.fromEntries(posts.map((p) => [String(p._id), p]))
+    const { CxGroupModel, CxEventModel } = require('../models/cxGroup.model')
+    const [groups, events] = await Promise.all([
+        CxGroupModel.find({ _id : { $in : list.filter((n) => n.group).map((n) => n.group) } }).select('name cover').lean(),
+        CxEventModel.find({ _id : { $in : list.filter((n) => n.event).map((n) => n.event) } }).select('title cover startsAt').lean()
+    ])
+    const groupById = Object.fromEntries(groups.map((g) => [String(g._id), g]))
+    const eventById = Object.fromEntries(events.map((e) => [String(e._id), e]))
     // current state for follow / friend notices (so the right button shows)
     const actorIds = [...new Set(list.map((n) => String(n.actor)))]
     const ctx = await S.viewerContext(req.user, app)
@@ -353,6 +491,8 @@ const notifications = handle(async (req) => {
                 actor : S.personCard(users[actor], req.user),
                 post : p ? { _id : String(p._id), thumb : p.media?.[0] || null, text : (p.text || '').slice(0, 80), background : p.background || '' } : null,
                 comment : n.comment ? String(n.comment) : null,
+                ...(n.group && groupById[String(n.group)] ? { group : { _id : String(n.group), name : groupById[String(n.group)].name, cover : groupById[String(n.group)].cover || '' } } : {}),
+                ...(n.event && eventById[String(n.event)] ? { event : { _id : String(n.event), title : eventById[String(n.event)].title, startsAt : eventById[String(n.event)].startsAt } } : {}),
                 reaction : n.reaction || null,
                 text : n.text || '',
                 read : n.read,
@@ -389,5 +529,7 @@ module.exports = {
     follow, followRequests, answerFollowRequest, removeFollower, followList, followSuggestions,
     friendAction, friendRequests, friendList, friendSuggestions,
     search, notifications, markRead, unread,
+    mute, favorite, favorites : listOf('favorites'), mutedList : listOf('muted'), unfollowedList : listOf('unfollowed'),
+    cxUnfollow, snooze, poke, pokes, birthdays,
     isValidId
 }

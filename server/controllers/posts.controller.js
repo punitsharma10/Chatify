@@ -1,6 +1,7 @@
 const UserModel = require('../models/user.model')
-const { PostModel, CommentModel, NotificationModel, REACTIONS } = require('../models/social.model')
-const { isAllowedMediaUrl, isValidId } = require('../helpers/chat')
+const { PostModel, CommentModel, NotificationModel, SocialReportModel, REACTIONS } = require('../models/social.model')
+const { CxGroupModel } = require('../models/cxGroup.model')
+const { isAllowedMediaUrl, isValidId, escapeRegex } = require('../helpers/chat')
 const S = require('../helpers/social')
 
 const PAGE = 12
@@ -37,10 +38,28 @@ const cleanMedia = (media) => {
     })
 }
 
+const cleanString = (v, max, label) => {
+    if (v === undefined || v === null) return ''
+    if (typeof v !== 'string' || v.trim().length > max) throw new S.SocialError(`${label} is too long`)
+    return v.trim()
+}
+
+// tagged people: up to 20 existing accounts that haven't blocked each other with me
+const cleanTagged = async (ids, me) => {
+    if (ids === undefined) return undefined
+    if (!Array.isArray(ids) || ids.length > 20) throw new S.SocialError('Tag up to 20 people')
+    const unique = [...new Set(ids.map(String))].filter((id) => id !== String(me._id))
+    if (unique.some((id) => !isValidId(id))) throw new S.SocialError('Invalid people')
+    const users = await UserModel.find({ _id : { $in : unique }, deletedAt : { $exists : false } }).select('blocked').lean()
+    return users.filter((u) => !S.blockedEitherWay(me, u)).map((u) => u._id)
+}
+
 const buildPost = (app, body, me) => {
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     const media = cleanMedia(body.media)
-    const doc = { app, author : me._id, text, media }
+    const doc = { app, author : me._id, text, media, location : cleanString(body.location, 100, 'Location') }
+    if (app === 'pixify') doc.hideLikes = !!body.hideLikes
+    if (app === 'connectify') doc.feeling = cleanString(body.feeling, 60, 'Feeling')
     if (app === 'pixify') {
         if (!media.length) throw new S.SocialError('Add a photo or video')
         if (text.length > 2200) throw new S.SocialError('Captions can have up to 2,200 characters')
@@ -74,11 +93,26 @@ const createPost = handle(async (req) => {
         doc.sharedPost = shared._id
     }
 
+    const tagged = await cleanTagged(req.body.tagged, me)
+    if (tagged?.length) doc.tagged = tagged
+
+    // Connectify: posting in a group (members only)
+    let group = null
+    if (req.body.group) {
+        if (app !== 'connectify') throw new S.SocialError('Only Connectify posts can go in groups')
+        group = isValidId(String(req.body.group)) ? await CxGroupModel.findById(req.body.group).lean() : null
+        if (!group || !group.members.some((m) => String(m.userId) === String(me._id))) throw new S.SocialError('Join the group to post in it', 403)
+        doc.group = group._id
+        doc.audience = 'public'
+    }
+
     const post = await PostModel.create(doc)
     const created = [post]
+    if (group) await CxGroupModel.updateOne({ _id : group._id }, { $set : { lastPostAt : new Date() } })
+    for (const id of tagged || []) await S.notify({ user : id, actor : me._id, app, type : 'tag', post : post._id })
 
     // "Also share to Connectify / Pixify": the same photos and caption as a post in the other app
-    const cross = Array.isArray(req.body.crossPost) ? req.body.crossPost.filter((a) => S.SOCIAL_APPS.includes(a) && a !== app) : []
+    const cross = Array.isArray(req.body.crossPost) && !group ? req.body.crossPost.filter((a) => S.SOCIAL_APPS.includes(a) && a !== app) : []
     for (const other of cross) {
         if (other === 'pixify' && !doc.media.length) continue
         created.push(await PostModel.create(buildPost(other, { text : doc.text, media : doc.media, audience : 'friends' }, me)))
@@ -112,6 +146,14 @@ const editPost = handle(async (req) => {
         post.audience = req.body.audience
     }
     if (req.body.commentsOff !== undefined) post.commentsOff = !!req.body.commentsOff
+    if (req.body.hideLikes !== undefined && post.app === 'pixify') post.hideLikes = !!req.body.hideLikes
+    if (req.body.location !== undefined) post.location = cleanString(req.body.location, 100, 'Location')
+    if (req.body.feeling !== undefined && post.app === 'connectify') post.feeling = cleanString(req.body.feeling, 60, 'Feeling')
+    if (req.body.tagged !== undefined) {
+        const before = new Set((post.tagged || []).map(String))
+        post.tagged = await cleanTagged(req.body.tagged, req.user)
+        for (const id of post.tagged) if (!before.has(String(id))) await S.notify({ user : id, actor : req.user._id, app : post.app, type : 'tag', post : post._id })
+    }
     await post.save()
     const ctx = await S.viewerContext(req.user, post.app)
     const [out] = await S.serializePosts([post.toObject()], ctx)
@@ -146,8 +188,26 @@ const getPost = handle(async (req) => {
 const feed = handle(async (req) => {
     const app = appOf(req.query.app)
     const ctx = await S.viewerContext(req.user, app)
-    const people = [...(app === 'pixify' ? ctx.following : ctx.friends), ctx.me].map(S.oid)
-    const raw = await PostModel.find({ app, author : { $in : people }, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
+    const v = req.user
+    let ids = [...(app === 'pixify' ? ctx.following : ctx.friends)]
+    const filter = { app, archived : { $ne : true }, ...beforeFilter(req.query.before) }
+    if (app === 'pixify') {
+        const muted = new Set((v.pixify?.muted || []).map(String))
+        ids = ids.filter((id) => !muted.has(id))
+        // Instagram's "Favorites" feed
+        if (req.query.filter === 'favorites') ids = (v.pixify?.favorites || []).map(String).filter((id) => ctx.following.has(id))
+        else ids.push(ctx.me)
+        filter.author = { $in : ids.map(S.oid) }
+    } else {
+        const now = Date.now()
+        const off = new Set([...(v.connectify?.unfollowed || []).map(String), ...(v.connectify?.snoozed || []).filter((s) => new Date(s.until) > now).map((s) => String(s.userId))])
+        ids = [...ids.filter((id) => !off.has(id)), ctx.me]
+        const hidden = v.connectify?.hiddenPosts || []
+        // friends' posts (outside groups) + posts in my groups
+        filter.$or = [{ author : { $in : ids.map(S.oid) }, group : { $exists : false } }, { group : { $in : [...ctx.groups].map(S.oid) } }]
+        if (hidden.length) filter._id = { $nin : hidden }
+    }
+    const raw = await PostModel.find(filter).sort({ createdAt : -1 }).limit(PAGE).lean()
     // keep paging past posts the viewer can't see (e.g. "only me" posts of friends)
     const posts = await S.serializePosts(raw, ctx)
     return { posts, next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
@@ -159,7 +219,9 @@ const explore = handle(async (req) => {
     const reels = req.query.reels === '1'
     const publicIds = (await UserModel.find({ 'pixify.private' : { $ne : true }, deletedAt : { $exists : false } }).select('_id').limit(5000).lean()).map((u) => u._id)
     const authors = reels ? [...publicIds, ...[...ctx.following].map(S.oid), S.oid(ctx.me)] : publicIds.filter((id) => String(id) !== ctx.me)
-    const raw = await PostModel.find({ app : 'pixify', author : { $in : authors }, ...(reels ? { isReel : true } : {}), ...beforeFilter(req.query.before) })
+    const muted = new Set((req.user.pixify?.muted || []).map(String))
+    const skip = req.user.pixify?.notInterested || []
+    const raw = await PostModel.find({ app : 'pixify', author : { $in : authors.filter((id) => !muted.has(String(id))) }, archived : { $ne : true }, ...(skip.length ? { _id : { $nin : skip } } : {}), ...(reels ? { isReel : true } : {}), ...beforeFilter(req.query.before) })
         .sort({ createdAt : -1 }).limit(reels ? 8 : 24).lean()
     const posts = await S.serializePosts(raw, ctx)
     return { posts, next : raw.length ? raw[raw.length - 1].createdAt : null }
@@ -173,18 +235,27 @@ const userPosts = handle(async (req) => {
     const ctx = await S.viewerContext(req.user, app)
     if (S.blockedEitherWay(req.user, author)) throw new S.SocialError('User not found', 404)
     if (app === 'pixify' && !S.canViewPixifyProfile(author, ctx)) return { posts : [], next : null, private : true }
-    const raw = await PostModel.find({ app, author : author._id, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
-    const posts = await S.serializePosts(raw, ctx)
+    // ?tab=tagged: posts other people tagged them in
+    if (req.query.tab === 'tagged') {
+        const raw = await PostModel.find({ app, tagged : author._id, archived : { $ne : true }, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
+        return { posts : await S.serializePosts(raw, ctx), next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
+    }
+    const base = { app, author : author._id, archived : { $ne : true }, group : { $exists : false } }
+    // pinned posts come first (on the first page)
+    const pinned = req.query.before ? [] : await PostModel.find({ ...base, pinnedAt : { $exists : true } }).sort({ pinnedAt : -1 }).limit(3).lean()
+    const raw = await PostModel.find({ ...base, ...(pinned.length ? { _id : { $nin : pinned.map((p) => p._id) } } : {}), ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE).lean()
+    const posts = await S.serializePosts([...pinned, ...raw], ctx)
     return { posts, next : raw.length === PAGE ? raw[raw.length - 1].createdAt : null }
 })
 
-// my saved (bookmarked) Pixify posts, newest saved first
+// my saved (bookmarked) posts, newest saved first (?app=connectify for Connectify)
 const savedPosts = handle(async (req) => {
-    const ids = [...(req.user.savedPosts || [])].reverse().slice(0, 60)
+    const app = req.query.app === 'connectify' ? 'connectify' : 'pixify'
+    const ids = [...((app === 'pixify' ? req.user.savedPosts : req.user.connectify?.saved) || [])].reverse().slice(0, 60)
     const raw = await PostModel.find({ _id : { $in : ids } }).lean()
     const order = Object.fromEntries(ids.map((id, i) => [String(id), i]))
     raw.sort((a, b) => order[String(a._id)] - order[String(b._id)])
-    const ctx = await S.viewerContext(req.user, 'pixify')
+    const ctx = await S.viewerContext(req.user, app)
     return { posts : await S.serializePosts(raw, ctx), next : null }
 })
 
@@ -224,13 +295,133 @@ const reactions = handle(async (req) => {
 })
 
 const savePost = handle(async (req) => {
-    const ctx = await S.viewerContext(req.user, 'pixify')
+    const raw = await PostModel.findById(isValidId(String(req.params.id)) ? req.params.id : null).select('app').lean()
+    if (!raw) throw new S.SocialError('This post is no longer available', 404)
+    const ctx = await S.viewerContext(req.user, raw.app)
     const { post } = await S.loadVisiblePost(req.params.id, ctx)
-    if (post.app !== 'pixify') throw new S.SocialError('Only Pixify posts can be saved')
     const save = req.body.save !== false
-    await UserModel.updateOne({ _id : req.user._id }, { $pull : { savedPosts : post._id } })
-    if (save) await UserModel.updateOne({ _id : req.user._id }, { $push : { savedPosts : { $each : [post._id], $slice : -500 } } })
+    const field = post.app === 'pixify' ? 'savedPosts' : 'connectify.saved'
+    await UserModel.updateOne({ _id : req.user._id }, { $pull : { [field] : post._id } })
+    if (save) await UserModel.updateOne({ _id : req.user._id }, { $push : { [field] : { $each : [post._id], $slice : -500 } } })
     return { saved : save }
+})
+
+/* ---------- more post tools ---------- */
+
+const ownPost = async (req) => {
+    if (!isValidId(String(req.params.id))) throw new S.SocialError('Post not found', 404)
+    const post = await PostModel.findOne({ _id : req.params.id, author : req.user._id })
+    if (!post) throw new S.SocialError('Post not found', 404)
+    return post
+}
+const postOut = async (req, post) => ({ post : (await S.serializePosts([post.toObject()], await S.viewerContext(req.user, post.app)))[0] })
+
+// POST /posts/:id/pin { pin } -> up to 3 pinned posts on your profile
+const pinPost = handle(async (req) => {
+    const post = await ownPost(req)
+    if (req.body.pin === false) post.pinnedAt = undefined
+    else {
+        if (post.group) throw new S.SocialError("Group posts can't be pinned to your profile")
+        if (post.archived) throw new S.SocialError('Unarchive the post first')
+        const count = await PostModel.countDocuments({ app : post.app, author : req.user._id, pinnedAt : { $exists : true }, _id : { $ne : post._id } })
+        if (count >= 3) throw new S.SocialError('You can pin up to 3 posts. Unpin one first.')
+        post.pinnedAt = new Date()
+    }
+    await post.save()
+    return postOut(req, post)
+})
+
+// POST /posts/:id/archive { archive } (Pixify): hidden from everyone else, kept in your Archive
+const archivePost = handle(async (req) => {
+    const post = await ownPost(req)
+    if (post.app !== 'pixify') throw new S.SocialError('Only Pixify posts can be archived')
+    post.archived = req.body.archive !== false
+    if (post.archived) post.pinnedAt = undefined
+    await post.save()
+    return postOut(req, post)
+})
+
+const pageOf = (raw, size) => ({ next : raw.length === size ? raw[raw.length - 1].createdAt : null })
+
+// GET /archive -> my archived Pixify posts
+const archived = handle(async (req) => {
+    const raw = await PostModel.find({ app : 'pixify', author : req.user._id, archived : true, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE * 2).lean()
+    return { posts : await S.serializePosts(raw, await S.viewerContext(req.user, 'pixify')), ...pageOf(raw, PAGE * 2) }
+})
+
+// GET /liked?app= -> posts I liked / reacted to ("Your activity")
+const liked = handle(async (req) => {
+    const app = appOf(req.query.app)
+    const raw = await PostModel.find({ app, 'reactions.userId' : req.user._id, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE * 2).lean()
+    return { posts : await S.serializePosts(raw, await S.viewerContext(req.user, app)), ...pageOf(raw, PAGE * 2) }
+})
+
+// GET /hashtags/:tag?app= -> posts with #tag, newest first
+const HASHTAG = /^[\p{L}\p{N}_]{1,60}$/u
+const hashtag = handle(async (req) => {
+    const app = appOf(req.query.app)
+    const tag = String(req.params.tag || '').replace(/^#/, '')
+    if (!HASHTAG.test(tag)) throw new S.SocialError('Invalid hashtag')
+    const filter = { app, archived : { $ne : true }, text : { $regex : `#${escapeRegex(tag)}(?![\\p{L}\\p{N}_])`, $options : 'i' } }
+    const ctx = await S.viewerContext(req.user, app)
+    const [raw, count] = await Promise.all([
+        PostModel.find({ ...filter, ...beforeFilter(req.query.before) }).sort({ createdAt : -1 }).limit(PAGE * 2).lean(),
+        req.query.before ? null : PostModel.countDocuments(filter)
+    ])
+    return { tag, ...(count !== null ? { count } : {}), posts : await S.serializePosts(raw, ctx), ...pageOf(raw, PAGE * 2) }
+})
+
+// POST /posts/:id/view -> a Reel was played (not counted for the author)
+const viewPost = handle(async (req) => {
+    if (!isValidId(String(req.params.id))) throw new S.SocialError('Post not found', 404)
+    await PostModel.updateOne({ _id : req.params.id, isReel : true, author : { $ne : req.user._id } }, { $inc : { views : 1 } })
+    return {}
+})
+
+// POST /posts/:id/hide { hide }: Connectify "Hide post" / Pixify Explore "Not interested"
+const hidePost = handle(async (req) => {
+    const raw = await PostModel.findById(isValidId(String(req.params.id)) ? req.params.id : null).select('app').lean()
+    if (!raw) throw new S.SocialError('Post not found', 404)
+    const field = raw.app === 'pixify' ? 'pixify.notInterested' : 'connectify.hiddenPosts'
+    if (req.body.hide === false) await UserModel.updateOne({ _id : req.user._id }, { $pull : { [field] : raw._id } })
+    else await UserModel.updateOne({ _id : req.user._id }, { $push : { [field] : { $each : [raw._id], $slice : -1000 } } })
+    return { hidden : req.body.hide !== false }
+})
+
+// POST /report { app, post | comment | user, reason }
+const REPORT_REASONS = ["It's spam", 'Nudity or sexual activity', 'Hate speech or symbols', 'Violence or dangerous organizations', 'Bullying or harassment', 'Scam or fraud', 'False information', 'Intellectual property violation', 'Suicide or self-injury', 'Something else']
+const report = handle(async (req) => {
+    const app = appOf(req.body.app)
+    const reason = REPORT_REASONS.includes(req.body.reason) ? req.body.reason : 'Something else'
+    const doc = { reporter : req.user._id, app, reason }
+    for (const k of ['post', 'comment', 'user']) {
+        if (req.body[k] !== undefined) {
+            if (!isValidId(String(req.body[k]))) throw new S.SocialError('Invalid report')
+            doc[k] = req.body[k]
+        }
+    }
+    if (!doc.post && !doc.comment && !doc.user) throw new S.SocialError('Nothing to report')
+    await SocialReportModel.create(doc)
+    return {}
+})
+const reportReasons = handle(async () => ({ reasons : REPORT_REASONS }))
+
+// GET /memories -> Connectify "On this day": my posts from today's date in earlier years
+const memories = handle(async (req) => {
+    const now = new Date()
+    const raw = await PostModel.find({ app : 'connectify', author : req.user._id, createdAt : { $lt : new Date(now.getFullYear(), 0, 1) } }).sort({ createdAt : -1 }).limit(3000).select('_id createdAt').lean()
+    const ids = raw.filter((p) => { const d = new Date(p.createdAt); return d.getMonth() === now.getMonth() && d.getDate() === now.getDate() }).map((p) => p._id)
+    const posts = ids.length ? await PostModel.find({ _id : { $in : ids } }).sort({ createdAt : -1 }).lean() : []
+    return { posts : await S.serializePosts(posts, await S.viewerContext(req.user, 'connectify')) }
+})
+
+// GET /watch -> Connectify videos (public, friends', my groups')
+const watch = handle(async (req) => {
+    const ctx = await S.viewerContext(req.user, 'connectify')
+    const raw = await PostModel.find({ app : 'connectify', 'media.kind' : 'video', ...beforeFilter(req.query.before),
+        $or : [{ audience : 'public', group : { $exists : false } }, { author : { $in : [...ctx.friends, ctx.me].map(S.oid) }, group : { $exists : false } }, { group : { $in : [...ctx.groups].map(S.oid) } }] })
+        .sort({ createdAt : -1 }).limit(PAGE).lean()
+    return { posts : await S.serializePosts(raw, ctx), ...pageOf(raw, PAGE) }
 })
 
 /* ---------- comments ---------- */
@@ -246,7 +437,9 @@ const serializeComments = (list, users, viewer, post) => list
         likeCount : (c.likes || []).length,
         liked : (c.likes || []).some((id) => String(id) === String(viewer._id)),
         canDelete : String(c.author) === String(viewer._id) || String(post.author) === String(viewer._id),
-        byAuthor : String(c.author) === String(post.author)
+        byAuthor : String(c.author) === String(post.author),
+        ...(post.pinnedComment && String(post.pinnedComment) === String(c._id) ? { pinned : true } : {}),
+        canPin : !c.parent && String(post.author) === String(viewer._id)
     }))
 
 const listComments = handle(async (req) => {
@@ -256,7 +449,10 @@ const listComments = handle(async (req) => {
     const { post } = await S.loadVisiblePost(req.params.id, ctx)
     const list = await CommentModel.find({ post : post._id }).sort({ createdAt : 1 }).limit(500).lean()
     const users = await S.loadUsers(list.map((c) => c.author))
-    return { comments : serializeComments(list, users, req.user, post) }
+    const comments = serializeComments(list, users, req.user, post)
+    // the pinned comment goes first
+    comments.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+    return { comments }
 })
 
 // POST /api/social/posts/:id/comments  { text, parent? }
@@ -297,6 +493,18 @@ const deleteComment = handle(async (req) => {
     return { removed : ids.map(String) }
 })
 
+// POST /comments/:id/pin { pin } (the post's author; one pinned comment per post)
+const pinComment = handle(async (req) => {
+    if (!isValidId(String(req.params.id))) throw new S.SocialError('Comment not found', 404)
+    const c = await CommentModel.findById(req.params.id).lean()
+    if (!c || c.parent) throw new S.SocialError('Comment not found', 404)
+    const post = await PostModel.findOne({ _id : c.post, author : req.user._id })
+    if (!post) throw new S.SocialError('Only the post author can pin comments', 403)
+    post.pinnedComment = req.body.pin === false ? undefined : c._id
+    await post.save()
+    return { pinned : req.body.pin !== false }
+})
+
 const likeComment = handle(async (req) => {
     if (!isValidId(String(req.params.id))) throw new S.SocialError('Comment not found', 404)
     const c = await CommentModel.findById(req.params.id).lean()
@@ -313,4 +521,8 @@ const likeComment = handle(async (req) => {
     return { liked : like, likeCount : (fresh?.likes || []).length }
 })
 
-module.exports = { handle, appOf, createPost, editPost, deletePost, getPost, feed, explore, userPosts, savedPosts, react, reactions, savePost, listComments, addComment, deleteComment, likeComment }
+module.exports = {
+    handle, appOf, createPost, editPost, deletePost, getPost, feed, explore, userPosts, savedPosts, react, reactions, savePost,
+    listComments, addComment, deleteComment, likeComment, pinComment,
+    pinPost, archivePost, archived, liked, hashtag, viewPost, hidePost, report, reportReasons, memories, watch
+}

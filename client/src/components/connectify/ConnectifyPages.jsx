@@ -290,6 +290,21 @@ const NOTE = {
   friend_request : 'sent you a friend request',
   friend_accept : 'accepted your friend request',
   share : 'shared your post',
+  tag : 'tagged you in a post',
+  poke : 'poked you',
+  group_invite : 'invited you to join',
+  group_join_request : 'asked to join',
+  group_join_accept : 'approved your request to join',
+  event_invite : 'invited you to',
+  event_going : 'is going to your event',
+}
+
+// where tapping a notification goes
+const noteTarget = (n) => {
+  if (n.group && ['group_invite', 'group_join_request', 'group_join_accept'].includes(n.type)) return `/connectify/groups/${n.group._id}`
+  if (n.event) return `/connectify/events/${n.event._id}`
+  if (n.type === 'poke') return '/connectify/pokes'
+  return n.post ? `/connectify/p/${n.post._id}` : userLink(n.actor)
 }
 
 export const ConnectifyNotifications = () => {
@@ -329,8 +344,8 @@ export const ConnectifyNotifications = () => {
               {['comment', 'reply', 'mention'].includes(n.type) && <span className='absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#45bd62] text-white ring-2 ring-cx-card'><IoChatbubbleEllipses size={14} /></span>}
             </Link>
             <div className='min-w-0 flex-1'>
-              <button onClick={() => navigate(n.post ? `/connectify/p/${n.post._id}` : userLink(n.actor))} className='text-left text-[15px]'>
-                <b>{n.actor.name}</b> {NOTE[n.type] || ''} {n.text && <span>"{n.text.slice(0, 100)}"</span>}
+              <button onClick={() => navigate(noteTarget(n))} className='text-left text-[15px]'>
+                <b>{n.actor.name}</b> {NOTE[n.type] || ''} {n.group && <b>{n.group.name}</b>}{n.event && <b>{n.event.title}</b>} {n.text && <span>"{n.text.slice(0, 100)}"</span>}
                 {n.post?.text && ['react', 'share'].includes(n.type) && <span className='text-cx-muted'>: {n.post.text.slice(0, 60)}</span>}
               </button>
               <p className={`text-[13px] ${n.read ? 'text-cx-muted' : 'font-semibold text-cx-blue'}`}>{longAgo(n.createdAt)}</p>
