@@ -6,6 +6,7 @@ import { api, enc, compact, usePaged, useOnVisible } from '../../helpers/social'
 import { notify, notifyError } from '../../helpers/toast'
 import { recentSearches, addRecentSearch, removeRecentSearch } from '../social/extras'
 import { MediaThumb, AutoVideo, RichText, Modal } from '../social/common'
+import YouTubeVideo from '../social/YouTubeVideo'
 import { usePixify } from './PixifyLayout'
 import { PostView, usePostActions, handleOf } from './Post'
 import { FollowButton } from './PixifyHome'
@@ -30,7 +31,7 @@ const exploreBlocks = (items) => {
 // "Photo by X on Pixabay / Pexels" (both ask apps to credit them)
 export const PexelsCredit = ({ post, className = '' }) => (
   <a href={post.external.link} target='_blank' rel='noopener noreferrer' onClick={(e) => e.stopPropagation()} className={`hover:underline ${className}`}>
-    {post.media[0].kind === 'video' ? 'Video' : 'Photo'} by {post.external.by} on {post.external.source}
+    {post.external.source === 'YouTube' ? <>{post.external.by} · YouTube</> : <>{post.media[0].kind === 'video' ? 'Video' : 'Photo'} by {post.external.by} on {post.external.source}</>}
   </a>
 )
 
@@ -71,7 +72,7 @@ export const PixifyExplore = () => {
       </div>
       {!paged.loading && !paged.items.length && <p className='py-20 text-center text-sm text-px-muted'>Nothing to explore yet. Posts from public accounts show up here.</p>}
       {paged.done && paged.items.length > 0 && <p className='py-8 text-center text-sm text-px-muted'>You've seen everything for now.</p>}
-      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some photos and videos are provided by {[...new Set(paged.items.filter((p) => p.external).map((p) => p.external.source))].map((src, i) => <React.Fragment key={src}>{i > 0 && ' and '}<a href={src === 'Pixabay' ? 'https://pixabay.com' : 'https://www.pexels.com'} target='_blank' rel='noopener noreferrer' className='underline'>{src}</a></React.Fragment>)}</p>}
+      {paged.items.some((p) => p.external) && <p className='pt-4 text-center text-xs text-px-muted'>Some photos and videos are provided by {[...new Set(paged.items.filter((p) => p.external).map((p) => p.external.source))].map((src, i) => <React.Fragment key={src}>{i > 0 && ' and '}<a href={src === 'Pixabay' ? 'https://pixabay.com' : src === 'YouTube' ? 'https://www.youtube.com' : 'https://www.pexels.com'} target='_blank' rel='noopener noreferrer' className='underline'>{src}</a></React.Fragment>)}</p>}
       <div ref={more} />
       {photo && (
         <Modal onClose={() => setPhoto(null)} label='Photo' className='flex max-h-[92vh] max-w-[92vw] flex-col items-center gap-2'>
@@ -105,7 +106,9 @@ const Reel = ({ post : initial }) => {
   return (
     <section ref={box} className='relative flex h-full snap-start snap-always items-center justify-center py-0 md:py-4'>
       <div className='relative h-full w-full overflow-hidden bg-black md:aspect-[9/16] md:h-full md:w-auto md:rounded-lg'>
-        <AutoVideo src={post.media[0].url} poster={post.media[0].poster} tapForSound className='h-full w-full' fit='object-contain' />
+        {post.media[0].youtube
+          ? <YouTubeVideo id={post.media[0].youtube} poster={post.media[0].poster} className='h-full w-full' />
+          : <AutoVideo src={post.media[0].url} poster={post.media[0].poster} tapForSound className='h-full w-full' fit='object-contain' />}
         <div className='pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pr-16 text-white'>
           <div className='pointer-events-auto flex items-center gap-2'>
             {post.external

@@ -30,9 +30,9 @@ export const RichText = ({ text, app, limit = 0, className = '', linkClass = '' 
 }
 
 // sound on / off for every feed video and reel, like Instagram: unmute once and the next videos play with sound too
-const sound = { on : false, listeners : new Set() }
-const setSound = (on) => { sound.on = on; sound.listeners.forEach((fn) => fn(on)) }
-const useSound = () => {
+export const sound = { on : false, listeners : new Set() }
+export const setSound = (on) => { sound.on = on; sound.listeners.forEach((fn) => fn(on)) }
+export const useSound = () => {
   const [on, setOn] = useState(sound.on)
   useEffect(() => { sound.listeners.add(setOn); return () => { sound.listeners.delete(setOn) } }, [])
   return on

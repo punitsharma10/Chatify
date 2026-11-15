@@ -44,6 +44,16 @@ const fake = http.createServer((rq, rs) => {
     })) }))
   } else if (u.pathname === '/pixabay/api/') {
     rs.end(JSON.stringify({ hits: Array.from({ length: per }, (_, i) => ({ id: Number(`${page}${i}`), pageURL: 'https://pixabay.com/photos/x', user: 'Mia', user_id: 9, webformatURL: 'https://cdn.pixabay.com/w.jpg', largeImageURL: `https://cdn.pixabay.com/${q}-${page}-${i}-l.jpg`, imageWidth: 800, imageHeight: 1200 })) }))
+  } else if (u.pathname === '/youtube/v3/search') {
+    seenAuth.push('youtube:' + u.searchParams.get('key') + ':' + u.searchParams.get('videoDuration') + ':' + u.searchParams.get('videoEmbeddable'))
+    if (u.searchParams.get('key') === 'over-quota') { rs.statusCode = 403; return rs.end('{"error":{"errors":[{"reason":"quotaExceeded"}]}}') }
+    const tok = u.searchParams.get('pageToken') || 'r0'
+    const r = Number(tok.slice(1))
+    const max = Number(u.searchParams.get('maxResults'))
+    rs.end(JSON.stringify({ nextPageToken: 'r' + (r + 1), items: Array.from({ length: max }, (_, i) => ({
+      id: { videoId: `${u.searchParams.get('q').split(' ')[0]}-${r}-${i}` },
+      snippet: { title: 'Fun &amp; games #shorts', channelTitle: 'Cool Channel', channelId: 'UC123', publishedAt: '2026-01-01T00:00:00Z', thumbnails: { high: { url: `https://i.ytimg.com/vi/x${i}/hqdefault.jpg` } } }
+    })) }))
   } else { rs.statusCode = 404; rs.end('{}') }
 })
 
@@ -107,6 +117,26 @@ const fake = http.createServer((rq, rs) => {
   const pe = await stock.explore(2, 24)
   check('Pixabay explore: tall photos + a video every 5', pe.length === 24 && pe[0].media[0].kind === 'video' && pe[1].media[0].url.endsWith('-l.jpg') && pe[5].media[0].kind === 'video')
   check('Pixabay key sent', seenAuth.includes('pixabay:pix-key'))
+
+  // YouTube Shorts (YOUTUBE_API_KEY): Reels and the tall Explore tiles, photos still from Pixabay
+  process.env.YOUTUBE_API_KEY = 'yt-key'
+  process.env.YOUTUBE_API_BASE = `http://localhost:${FAKE_PORT}/youtube/v3`
+  const youtube = require('../helpers/youtube')
+  const y1 = await stock.reels(1, 8)
+  check('Reels use YouTube Shorts when the key is set', y1.length === 8 && y1.every((p) => p.media[0].youtube && p.isReel && p.external.source === 'YouTube'))
+  check('Shorts: embeddable, short, credited, title decoded', seenAuth.includes('youtube:yt-key:short:true') && y1[0].external.by === 'Cool Channel' && y1[0].external.link.startsWith('https://www.youtube.com/shorts/') && y1[0].text === 'Fun & games #shorts' && y1[0].media[0].poster)
+  const y7 = await stock.reels(7, 8) // positions 48..55: end of the first search + start of the next topic
+  check('Shorts pages continue across searches', y7.length === 8 && y7[0]._id === 'yt-nature-0-48' && y7[2]._id === 'yt-travel-0-0')
+  const deep = await youtube.reels(1 + (20 * 50) / 8, 8) // second round of the first topic needs a page token
+  check('later rounds use YouTube page tokens', deep.length === 8 && deep[0]._id.startsWith('yt-nature-1-'))
+  const reelIds = new Set([...(await stock.reels(2, 8)), ...(await stock.reels(3, 8))].map((p) => p._id))
+  check('no repeats between Reels pages', reelIds.size === 16)
+  const ye = await stock.explore(1, 24)
+  check('Explore: a Short in every tall tile, Pixabay photos around', ye[0].media[0].youtube && ye[5].media[0].youtube && ye[1].media[0].kind === 'image' && ye[1].external.source === 'Pixabay')
+  check("Explore Shorts differ from the first Reels", !y1.some((p) => p._id === ye[0]._id))
+  process.env.YOUTUBE_API_KEY = 'over-quota'
+  const yq = await stock.reels(40, 8)
+  check('YouTube out of quota: falls back to Pixabay', yq.length > 0 && yq.every((p) => p.external.source === 'Pixabay'))
 
   fake.close()
   console.log(results.join('\n'))
