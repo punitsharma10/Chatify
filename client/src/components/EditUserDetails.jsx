@@ -7,6 +7,7 @@ import { useDispatch } from 'react-redux'
 import { setUser } from '../redux/userSlice'
 import { IoArrowBack, IoCamera } from "react-icons/io5";
 import { formatPhone } from '../helpers/phone'
+import UsernameField, { normalizeUsername } from './apps/UsernameField'
 
 const EditUserDetails = ({ onClose, user }) => {
   const [data, setData] = useState({
@@ -15,6 +16,9 @@ const EditUserDetails = ({ onClose, user }) => {
     about: user?.about || ''
   })
   const [uploading, setUploading] = useState(false)
+  // @username shared by Chats, Pixify and Connectify
+  const [username, setUsername] = useState(user?.username || '')
+  const [usernameState, setUsernameState] = useState('idle')
   const uploadPhotoRef = useRef()
   const dispatch = useDispatch()
 
@@ -22,6 +26,7 @@ const EditUserDetails = ({ onClose, user }) => {
   // re-running on every user update (e.g. someone coming online) would wipe what you're typing.
   useEffect(() => {
     setData((preve) => ({ ...preve, name: user?.name, profile_pic: user?.profile_pic, about: user?.about || '' }))
+    setUsername(user?.username || '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?._id])
 
@@ -57,12 +62,16 @@ const EditUserDetails = ({ onClose, user }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    const newUsername = normalizeUsername(username);
+    const usernameChanged = newUsername !== (user?.username || '');
+    if (usernameChanged && newUsername && usernameState !== 'ok') return notifyError('Choose an available username first');
     try {
       const URL = `${process.env.REACT_APP_BACKEND_URL}/api/updateuser`;
       const payload = {
         name: data.name,
         profile_pic: data.profile_pic,
         about: data.about,
+        ...(usernameChanged && newUsername ? { username: newUsername } : {}),
       };
       const response = await axios.post(URL, payload, { withCredentials: true });
 
@@ -158,6 +167,12 @@ const EditUserDetails = ({ onClose, user }) => {
             onChange={handleOnChange}
           />
           <p className='mt-1 text-right text-xs text-wa-muted'>{(data.about || '').length}/140</p>
+        </div>
+
+        {/* @username */}
+        <div className='mt-2.5 bg-wa-surface px-5 py-4 shadow-sm sm:px-7'>
+          <UsernameField value={username} current={user?.username || ''} nameHint={data.name} onChange={(v, st) => { setUsername(v); setUsernameState(st) }} />
+          <p className='mt-2 text-xs text-wa-muted'>One username for Chats, Pixify and Connectify. People can find you by typing your exact @username.</p>
         </div>
 
         {/* phone (read only) */}

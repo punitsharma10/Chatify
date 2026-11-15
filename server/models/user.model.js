@@ -32,6 +32,12 @@ const userSchema = new mongoose.Schema({
         type : String,
         required : true,
     },
+    // one public @username for the whole account (Chats search, Pixify, Connectify); lowercase, see helpers/username.js
+    username : {
+        type : String,
+        trim : true,
+        lowercase : true
+    },
     profile_pic : {
         type : String,
         default : ""
@@ -102,6 +108,7 @@ const userSchema = new mongoose.Schema({
 // unique only when the field exists, so phone-only and email-only accounts can coexist
 userSchema.index({ email : 1 }, { unique : true, partialFilterExpression : { email : { $type : 'string' } } })
 userSchema.index({ phone : 1 }, { unique : true, partialFilterExpression : { phone : { $type : 'string' } } })
+userSchema.index({ username : 1 }, { unique : true, partialFilterExpression : { username : { $type : 'string' } } })
 
 const UserModel = mongoose.model('User',userSchema)
 

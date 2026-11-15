@@ -36,6 +36,7 @@ import { MdOutlinePoll } from 'react-icons/md'
 import { IoLocationOutline } from 'react-icons/io5'
 import StatusPanel from './StatusPanel'
 import CallsPanel from './CallsPanel'
+import AppSwitcher from './apps/AppSwitcher'
 import { MuteDialog } from './ChatDialogs'
 import ShortcutsDialog from './ShortcutsDialog'
 import Planner from './Planner'
@@ -301,6 +302,9 @@ const SideBar = () => {
           <RailButton id='status' title='Status' icon={<TbCircleDashed size={23} />} dot={statusUnseen} />
           <span className='my-1 h-px w-8 bg-wa-border' />
           <RailButton id='planner' title='Planner' icon={<IoAlarmOutline size={22} />} onClick={() => { setPlannerTab('reminders'); setDrawer('planner') }} />
+          <span className='my-1 h-px w-8 bg-wa-border' />
+          {/* the other Chatify apps: same account, no second login */}
+          <AppSwitcher only={['pixify', 'connectify']} />
         </div>
         <div className='flex flex-col items-center gap-2'>
           <RailButton id='starred' title='Starred messages' icon={<IoStarOutline size={21} />} />

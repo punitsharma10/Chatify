@@ -12,6 +12,7 @@ const resetPassword = require('../controllers/resetPassword.controller');
 const { listSessions, revokeSessions } = require('../controllers/sessions.controller');
 const { linkPreview } = require('../controllers/linkPreview.controller');
 const deleteAccount = require('../controllers/deleteAccount.controller');
+const { checkUsername } = require('../controllers/username.controller');
 
 const router = express.Router();
 
@@ -28,6 +29,8 @@ router.post('/updateuser',requireAuth,updateUserDetails)
 router.get('/userdetails', userDetails)
 router.get('/logout',logout)
 router.post("/searchuser",requireAuth,SearchUser)
+// is an @username free? (registration and the Pixify username prompt)
+router.post('/username/check', checkUsername)
 
 // linked devices
 router.get('/sessions', requireAuth, listSessions)

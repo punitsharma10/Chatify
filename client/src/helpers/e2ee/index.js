@@ -266,6 +266,8 @@ export const prepareOutgoing = async (event, payload, { fresh = false } = {}) =>
     }
 
     if (event === 'status-post') {
+      // shared to Pixify / Connectify: those apps show it outside Chats, so it's sent unencrypted (the composer says so)
+      if ((payload.apps || []).some((a) => a !== 'chats')) return { payload : clientOnly(payload) }
       const aud = await rawCall(st.socket, 'status-audience')
       if (!aud.ok) return { payload : clientOnly(payload) }
       const lacking = Object.entries(aud.users).some(([id, devices]) => id !== st.me && !active(devices).length)
@@ -277,7 +279,7 @@ export const prepareOutgoing = async (event, payload, { fresh = false } = {}) =>
       if (payload.kind === 'text' && !body.text) return { error : 'Type a status' }
       if ((body.text || body.caption || '').length > 700) return { error : 'Status is too long (max 700 characters)' }
       const env = await sealFor(body, st.me, recipientsOf(aud.users))
-      return { payload : { kind : payload.kind, background : payload.background, font : payload.font, e2ee : env } }
+      return { payload : { kind : payload.kind, background : payload.background, font : payload.font, apps : payload.apps, e2ee : env } }
     }
   } catch (e) {
     console.warn('[e2ee] could not encrypt', e)

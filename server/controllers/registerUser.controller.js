@@ -2,6 +2,7 @@ const bcryptjs = require('bcryptjs')
 const UserModel = require("../models/user.model")
 const { consumeVerifiedToken, checkPasswords, findUser, readIdentifier, label } = require('./otp.controller')
 const { isAllowedMediaUrl } = require('../helpers/chat')
+const { normalizeUsername, usernameProblem, usernameAvailable } = require('../helpers/username')
 
 // Final registration step. Requires the token returned by /api/otp/verify (purpose "register"),
 // so an account can only be created for an email / phone number the person actually controls.
@@ -23,6 +24,13 @@ const registerUser = async (req,res) => {
         }
         if(profile_pic && !isAllowedMediaUrl(profile_pic)){
             return res.status(400).json({ message : "Invalid profile photo", error : true })
+        }
+        // optional @username (people who skip it pick one the first time they open Pixify)
+        const username = normalizeUsername(req.body.username)
+        if(username){
+            const problem = usernameProblem(username)
+            if(problem) return res.status(400).json({ message : problem, error : true, code : 'username' })
+            if(!(await usernameAvailable(username))) return res.status(400).json({ message : 'This username is taken.', error : true, code : 'username' })
         }
 
         const existing = await findUser(id)
@@ -50,6 +58,7 @@ const registerUser = async (req,res) => {
             name : name.trim(),
             [id.channel === 'sms' ? 'phone' : 'email'] : id.target,
             profile_pic : profile_pic || "",
+            ...(username ? { username } : {}),
             password: hashpassword
         })
         const newUserSave = await user.save()
@@ -62,6 +71,9 @@ const registerUser = async (req,res) => {
             success : true
         })
     } catch (error) {
+        if(error?.code === 11000 && error?.keyPattern?.username){
+            return res.status(400).json({ message : "This username is taken.", error : true, code : 'username' })
+        }
         if(error?.code === 11000){
             return res.status(400).json({ message : "An account with these details already exists. Please log in.", error : true })
         }

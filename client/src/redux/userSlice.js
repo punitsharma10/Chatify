@@ -3,6 +3,7 @@ import { createSlice } from '@reduxjs/toolkit'
 const initialState = {
   _id : "",
   name : "",
+  username : "", // one @username for Chats, Pixify and Connectify
   email : "",
   phone : "",
   profile_pic : "",
@@ -24,6 +25,7 @@ export const userSlice = createSlice({
     setUser : (state,action)=>{
         state._id = action.payload._id
         state.name = action.payload.name
+        state.username = action.payload.username || ""
         state.email = action.payload.email || ""
         state.phone = action.payload.phone || ""
         state.profile_pic = action.payload.profile_pic
@@ -48,6 +50,7 @@ export const userSlice = createSlice({
     logout : (state)=>{
         state._id = ""
         state.name = ""
+        state.username = ""
         state.email = ""
         state.phone = ""
         state.profile_pic = ""
