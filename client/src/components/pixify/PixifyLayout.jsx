@@ -117,7 +117,7 @@ const PixifyLayout = () => {
           </div>
           <div className={`flex flex-col gap-2 ${navOpen ? 'items-start' : 'items-center'}`}>
             {navOpen && <p className='whitespace-nowrap px-3 text-xs font-semibold uppercase tracking-wide text-px-muted'>Your apps</p>}
-            <AppSwitcher variant='rail' className={navOpen ? 'flex-row px-2' : ''} />
+            <AppSwitcher variant={navOpen ? 'row' : 'rail'} className={navOpen ? 'px-2' : ''} />
           </div>
         </nav>
         </div>
