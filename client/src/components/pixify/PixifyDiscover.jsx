@@ -101,7 +101,7 @@ const Reel = ({ post : initial }) => {
     }, { threshold : [0.7] })
     io.observe(el)
     return () => io.disconnect()
-  }, [post._id, post.mine])
+  }, [post._id, post.mine, post.external])
   return (
     <section ref={box} className='relative flex h-full snap-start snap-always items-center justify-center py-0 md:py-4'>
       <div className='relative h-full w-full overflow-hidden bg-black md:aspect-[9/16] md:h-full md:w-auto md:rounded-lg'>
