@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Toaster } from 'react-hot-toast';
 import './App.css';
 import { Outlet } from 'react-router-dom';
+import AppUpdateBanner from './components/AppUpdateBanner';
 
 const phoneQuery = '(max-width: 767px)';
 
@@ -44,6 +45,7 @@ function App() {
           loading: { icon: null },
         }}
       />
+      <AppUpdateBanner />
       <main>
         <Outlet />
       </main>

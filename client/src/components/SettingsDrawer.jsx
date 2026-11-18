@@ -11,6 +11,8 @@ import { resetChat } from '../redux/chatSlice'
 import { THEMES, setTheme, useTheme, FONT_SIZES, setFontSize, useFontSize, useEnterSends, setEnterSends, useNotificationPreviews, setNotificationPreviews } from '../helpers/theme'
 import Drawer from './Drawer'
 import MadeBy from './MadeBy'
+import { AppSettings } from './AppUpdateBanner'
+import { IoPhonePortraitOutline } from 'react-icons/io5'
 import Avatar from './Avatar'
 import { Toggle } from './ContactInfo'
 import { setBlocked, setUser } from '../redux/userSlice'
@@ -205,6 +207,10 @@ const SettingsDrawer = ({ onClose }) => {
           ))}
         </div>
         <p className='px-6 pb-3 text-xs text-wa-muted'>Saved on this device only.</p>
+      </Section>
+
+      <Section icon={<IoPhonePortraitOutline size={18} />} title='Chatify app'>
+        <AppSettings />
       </Section>
 
       <Section icon={<IoPersonCircleOutline size={18} />} title='Account'>
