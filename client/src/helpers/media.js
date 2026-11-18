@@ -1,3 +1,4 @@
+import { isNativeApp, openExternally } from './nativeApp'
 // Cloudinary URL helpers: request smaller, optimised versions instead of downloading originals.
 const isCloudinary = (url) => typeof url === 'string' && url.includes('res.cloudinary.com') && url.includes('/upload/')
 
@@ -30,6 +31,8 @@ export const fileNameFromUrl = (url = '') => {
 
 // download a (cross-origin) file with its name; falls back to opening it
 export const downloadMedia = async (url, name) => {
+  // the Android app's web view can't save files: hand the download to the phone's browser
+  if (isNativeApp()) return openExternally(cloudinaryTransform(url, 'fl_attachment'))
   try {
     const res = await fetch(url)
     if (!res.ok) throw new Error('failed')

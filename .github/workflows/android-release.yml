@@ -1,0 +1,120 @@
+# Chatify Android app release
+#
+# The app opens https://chatifybypunit.onrender.com, so normal web changes reach the app on every Render deploy
+# without a new APK. Build a new APK only when the app shell changes (icon, permissions, splash, ...):
+#
+#   git tag android-v1.0.1
+#   git push origin android-v1.0.1
+#
+# (or Actions > "Android app release" > Run workflow, and type the version)
+#
+# This builds a signed APK and publishes it as the latest GitHub Release, always under the same link:
+#   https://github.com/punitsharma10/Chatify/releases/latest/download/Chatify-android.apk
+# Installed apps see "Update available" within a few hours.
+#
+# Needs these repository secrets (Settings > Secrets and variables > Actions); see mobile/README.md:
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+
+name: Android app release
+
+on:
+  push:
+    tags: ['android-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 1.0.1 (must be higher than the last release)'
+        required: true
+
+permissions:
+  contents: write # create the GitHub Release
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          RAW="${INPUT_VERSION:-${GITHUB_REF_NAME#android-v}}"
+          VERSION="${RAW#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.2.3 (got '$VERSION')"; exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          # Android needs a growing whole number: 1.2.3 -> 10203
+          CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=android-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building Chatify for Android $VERSION (version code $CODE)"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      - name: Prepare the Android project
+        run: npx cap sync android
+
+      - name: Restore the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Add the ANDROID_KEYSTORE_BASE64 secret first (see mobile/README.md)"; exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/chatify-release.jks"
+
+      - name: Build the signed APK
+        working-directory: mobile/android
+        env:
+          CHATIFY_KEYSTORE_FILE: ${{ runner.temp }}/chatify-release.jks
+          CHATIFY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CHATIFY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CHATIFY_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PappVersionName=${{ steps.version.outputs.name }} \
+            -PappVersionCode=${{ steps.version.outputs.code }}
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Chatify-android.apk"
+          rm -f "$RUNNER_TEMP/chatify-release.jks"
+
+      - name: Check the APK is signed
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/Chatify-android.apk" | head -3
+
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          gh release create "$TAG" "$RUNNER_TEMP/Chatify-android.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Chatify for Android $VERSION" \
+            --latest \
+            --notes "Install: open https://github.com/$GITHUB_REPOSITORY/releases/latest/download/Chatify-android.apk on your Android phone, then tap the downloaded file. Already installed? The app shows Update available."

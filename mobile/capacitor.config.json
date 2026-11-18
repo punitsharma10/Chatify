@@ -1,0 +1,14 @@
+{
+  "appId": "com.punitsharma.chatify",
+  "appName": "Chatify",
+  "webDir": "www",
+  "server": {
+    "url": "https://chatifybypunit.onrender.com",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#00a884"
+  }
+}

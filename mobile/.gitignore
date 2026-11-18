@@ -1,0 +1,5 @@
+node_modules/
+# signing key details stay on your computer / in GitHub secrets, never in git
+*.jks
+*.keystore
+keystore.properties
